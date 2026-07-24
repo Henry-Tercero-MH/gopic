@@ -16,47 +16,47 @@ export interface Producto {
   nombre: string;
   precio: number;
   emoji: string;
+  /** Foto del producto. Placeholder de Unsplash mientras no haya fotos reales. */
+  imagen?: string;
   destacado?: boolean;
 }
 
+/** Arma una URL de Unsplash optimizada para las tarjetas del POS (placeholder). */
+const img = (id: string) => `https://images.unsplash.com/${id}?w=400&q=60&fit=crop`;
+
 export const categorias: Categoria[] = [
-  { id: 'cat-cafe', nombre: 'Café', emoji: '☕' },
+  { id: 'cat-burgers', nombre: 'Hamburguesas', emoji: '🍔' },
+  { id: 'cat-fritos', nombre: 'Papas y fritos', emoji: '🍟' },
+  { id: 'cat-antojitos', nombre: 'Antojitos', emoji: '🌭' },
   { id: 'cat-frios', nombre: 'Fríos', emoji: '🧊' },
-  { id: 'cat-te', nombre: 'Tés e infusiones', emoji: '🍵' },
-  { id: 'cat-pan', nombre: 'Panadería', emoji: '🥐' },
-  { id: 'cat-postres', nombre: 'Postres', emoji: '🍰' },
-  { id: 'cat-salados', nombre: 'Salados', emoji: '🥪' },
 ];
 
 export const productos: Producto[] = [
-  { id: 'p-espresso', categoriaId: 'cat-cafe', nombre: 'Espresso', precio: 12, emoji: '☕', destacado: true },
-  { id: 'p-americano', categoriaId: 'cat-cafe', nombre: 'Americano', precio: 15, emoji: '☕' },
-  { id: 'p-capuchino', categoriaId: 'cat-cafe', nombre: 'Capuchino', precio: 22, emoji: '☕', destacado: true },
-  { id: 'p-latte', categoriaId: 'cat-cafe', nombre: 'Latte', precio: 24, emoji: '☕', destacado: true },
-  { id: 'p-mocha', categoriaId: 'cat-cafe', nombre: 'Mocha', precio: 27, emoji: '☕' },
-  { id: 'p-flatwhite', categoriaId: 'cat-cafe', nombre: 'Flat White', precio: 25, emoji: '☕' },
-  { id: 'p-cortado', categoriaId: 'cat-cafe', nombre: 'Cortado', precio: 18, emoji: '☕' },
+  /* ---- Hamburguesas ---- */
+  { id: 'p-hamburguesa', categoriaId: 'cat-burgers', nombre: 'Hamburguesa clásica', precio: 38, emoji: '🍔', imagen: img('photo-1568901346375-23c9450c58cd'), destacado: true },
+  { id: 'p-cheeseburger', categoriaId: 'cat-burgers', nombre: 'Cheeseburger', precio: 42, emoji: '🍔', imagen: img('photo-1571091718767-18b5b1457add') },
+  { id: 'p-doble', categoriaId: 'cat-burgers', nombre: 'Doble carne', precio: 55, emoji: '🍔', imagen: img('photo-1586190848861-99aa4a171e90'), destacado: true },
+  { id: 'p-bacon', categoriaId: 'cat-burgers', nombre: 'Burger con tocino', precio: 52, emoji: '🥓', imagen: img('photo-1594007654729-407eedc4be65') },
+  { id: 'p-combo-burger', categoriaId: 'cat-burgers', nombre: 'Combo burger + papas', precio: 65, emoji: '🍔', imagen: img('photo-1550547660-d9450f859349'), destacado: true },
 
-  { id: 'p-frappe', categoriaId: 'cat-frios', nombre: 'Frappé de café', precio: 32, emoji: '🥤', destacado: true },
-  { id: 'p-coldbrew', categoriaId: 'cat-frios', nombre: 'Cold Brew', precio: 28, emoji: '🧊' },
-  { id: 'p-iceslatte', categoriaId: 'cat-frios', nombre: 'Latte helado', precio: 26, emoji: '🧊' },
-  { id: 'p-limonada', categoriaId: 'cat-frios', nombre: 'Limonada de hierbabuena', precio: 20, emoji: '🍋' },
+  /* ---- Papas y fritos ---- */
+  { id: 'p-papas', categoriaId: 'cat-fritos', nombre: 'Papas fritas', precio: 22, emoji: '🍟', imagen: img('photo-1630384060421-cb20d0e0649d'), destacado: true },
+  { id: 'p-papas-grandes', categoriaId: 'cat-fritos', nombre: 'Papas grandes', precio: 30, emoji: '🍟', imagen: img('photo-1573080496219-bb080dd4f877') },
+  { id: 'p-onion-rings', categoriaId: 'cat-fritos', nombre: 'Aros de cebolla', precio: 28, emoji: '🧅', imagen: img('photo-1541544741938-0af808871cc0') },
+  { id: 'p-nuggets', categoriaId: 'cat-fritos', nombre: 'Nuggets de pollo', precio: 34, emoji: '🍗', imagen: img('photo-1626645738196-c2a7c87a8f58') },
 
-  { id: 'p-chai', categoriaId: 'cat-te', nombre: 'Chai latte', precio: 24, emoji: '🍵' },
-  { id: 'p-verde', categoriaId: 'cat-te', nombre: 'Té verde', precio: 16, emoji: '🍵' },
-  { id: 'p-manzanilla', categoriaId: 'cat-te', nombre: 'Manzanilla', precio: 14, emoji: '🌼' },
+  /* ---- Antojitos ---- */
+  { id: 'p-salchipapa', categoriaId: 'cat-antojitos', nombre: 'Salchipapas', precio: 35, emoji: '🌭', imagen: img('photo-1626700051175-6818013e1d4f'), destacado: true },
+  { id: 'p-hotdog', categoriaId: 'cat-antojitos', nombre: 'Hot dog', precio: 30, emoji: '🌭', imagen: img('photo-1612392062631-94dd858cba88') },
+  { id: 'p-alitas', categoriaId: 'cat-antojitos', nombre: 'Alitas BBQ', precio: 48, emoji: '🍗', imagen: img('photo-1608039755401-742074f0548d'), destacado: true },
+  { id: 'p-boneless', categoriaId: 'cat-antojitos', nombre: 'Boneless', precio: 46, emoji: '🍗', imagen: img('photo-1561758033-d89a9ad46330') },
+  { id: 'p-nachos', categoriaId: 'cat-antojitos', nombre: 'Nachos con queso', precio: 40, emoji: '🧀', imagen: img('photo-1613514785940-daed07799d9b') },
+  { id: 'p-quesadilla', categoriaId: 'cat-antojitos', nombre: 'Quesadilla', precio: 32, emoji: '🫓', imagen: img('photo-1582169296194-e4d644c48063') },
+  { id: 'p-pollo-frito', categoriaId: 'cat-antojitos', nombre: 'Pollo frito', precio: 50, emoji: '🍗', imagen: img('photo-1562967914-608f82629710') },
 
-  { id: 'p-croissant', categoriaId: 'cat-pan', nombre: 'Croissant', precio: 18, emoji: '🥐', destacado: true },
-  { id: 'p-concha', categoriaId: 'cat-pan', nombre: 'Concha', precio: 12, emoji: '🍞' },
-  { id: 'p-muffin', categoriaId: 'cat-pan', nombre: 'Muffin de arándano', precio: 20, emoji: '🧁' },
-
-  { id: 'p-cheesecake', categoriaId: 'cat-postres', nombre: 'Cheesecake', precio: 35, emoji: '🍰', destacado: true },
-  { id: 'p-brownie', categoriaId: 'cat-postres', nombre: 'Brownie', precio: 25, emoji: '🍫' },
-  { id: 'p-tres-leches', categoriaId: 'cat-postres', nombre: 'Tres leches', precio: 30, emoji: '🍰' },
-
-  { id: 'p-sandwich', categoriaId: 'cat-salados', nombre: 'Sándwich de pollo', precio: 38, emoji: '🥪' },
-  { id: 'p-panini', categoriaId: 'cat-salados', nombre: 'Panini caprese', precio: 42, emoji: '🥪', destacado: true },
-  { id: 'p-quiche', categoriaId: 'cat-salados', nombre: 'Quiche de espinaca', precio: 34, emoji: '🥧' },
+  /* ---- Fríos ---- */
+  { id: 'p-malteada', categoriaId: 'cat-frios', nombre: 'Malteada', precio: 30, emoji: '🥤', imagen: img('photo-1585238342024-78d387f4a707'), destacado: true },
+  { id: 'p-refresco', categoriaId: 'cat-frios', nombre: 'Refresco', precio: 15, emoji: '🥤', imagen: img('photo-1600271886742-f049cd451bba') },
 ];
 
 /* ---- Mesas ---- */
@@ -95,6 +95,9 @@ export interface ComandaItem {
   nota?: string;
 }
 
+/** Cómo salió una comanda del tablero: se entregó al cliente o se descartó (merma). */
+export type Desenlace = 'entregada' | 'descartada';
+
 export interface Comanda {
   id: string;
   folio: string;
@@ -103,6 +106,10 @@ export interface Comanda {
   estado: EstadoComanda;
   creada: Date;
   items: ComandaItem[];
+  /** Momento de entrega (ms). Al fijarse, el contador de tiempo queda congelado. */
+  congeladaEn?: number;
+  /** Desenlace al salir del tablero; solo presente en el historial. */
+  desenlace?: Desenlace;
 }
 
 const now = Date.now();
@@ -110,33 +117,33 @@ const minAgo = (m: number) => new Date(now - m * 60000);
 
 export const comandas: Comanda[] = [
   {
-    id: 'c-1', folio: '#1042', origen: 'Mesa 4', estacion: 'Barra', estado: 'pendiente', creada: minAgo(2),
+    id: 'c-1', folio: '#1042', origen: 'Mesa 4', estacion: 'Cocina', estado: 'pendiente', creada: minAgo(2),
     items: [
-      { nombre: 'Latte', cantidad: 2, nota: 'Uno deslactosado' },
-      { nombre: 'Capuchino', cantidad: 1 },
+      { nombre: 'Hamburguesa clásica', cantidad: 2, nota: 'Una sin cebolla' },
+      { nombre: 'Papas fritas', cantidad: 1 },
     ],
   },
   {
-    id: 'c-2', folio: '#1041', origen: 'Para llevar', estacion: 'Barra', estado: 'preparacion', creada: minAgo(6),
+    id: 'c-2', folio: '#1041', origen: 'Para llevar', estacion: 'Cocina', estado: 'preparacion', creada: minAgo(6),
     items: [
-      { nombre: 'Frappé de café', cantidad: 1, nota: 'Sin crema' },
-      { nombre: 'Cold Brew', cantidad: 1 },
+      { nombre: 'Salchipapas', cantidad: 1, nota: 'Extra queso' },
+      { nombre: 'Refresco', cantidad: 1 },
     ],
   },
   {
     id: 'c-3', folio: '#1040', origen: 'Mesa 7', estacion: 'Cocina', estado: 'preparacion', creada: minAgo(11),
     items: [
-      { nombre: 'Panini caprese', cantidad: 2 },
-      { nombre: 'Quiche de espinaca', cantidad: 1 },
+      { nombre: 'Alitas BBQ', cantidad: 2 },
+      { nombre: 'Boneless', cantidad: 1 },
     ],
   },
   {
-    id: 'c-4', folio: '#1039', origen: 'Mesa 1', estacion: 'Barra', estado: 'listo', creada: minAgo(9),
-    items: [{ nombre: 'Americano', cantidad: 1 }, { nombre: 'Croissant', cantidad: 1 }],
+    id: 'c-4', folio: '#1039', origen: 'Mesa 1', estacion: 'Cocina', estado: 'listo', creada: minAgo(9),
+    items: [{ nombre: 'Cheeseburger', cantidad: 1 }, { nombre: 'Nuggets de pollo', cantidad: 1 }],
   },
   {
-    id: 'c-5', folio: '#1038', origen: 'Barra 1', estacion: 'Cocina', estado: 'pendiente', creada: minAgo(1),
-    items: [{ nombre: 'Sándwich de pollo', cantidad: 1, nota: 'Sin cebolla' }],
+    id: 'c-5', folio: '#1038', origen: 'Barra 1', estacion: 'Barra', estado: 'pendiente', creada: minAgo(1),
+    items: [{ nombre: 'Malteada', cantidad: 2, nota: 'Una de fresa' }],
   },
 ];
 
@@ -152,75 +159,78 @@ export interface PreparacionReceta {
  * En el sistema real vendrían del módulo de Recetario enlazado al producto.
  */
 export const preparaciones: Record<string, PreparacionReceta> = {
-  Latte: {
-    tiempoMin: 3,
-    ingredientes: ['30 ml de espresso (1 shot)', '180 ml de leche vaporizada', 'Vaso 16 oz'],
+  'Hamburguesa clásica': {
+    tiempoMin: 8,
+    ingredientes: ['Pan de hamburguesa', 'Carne de res 150 g', 'Lechuga', 'Tomate', 'Cebolla', 'Salsas'],
     pasos: [
-      'Extraer 1 shot de espresso (25-30 seg).',
-      'Vaporizar la leche a 60-65 °C con microespuma fina.',
-      'Verter la leche sobre el espresso dejando ~1 cm de espuma.',
-      'Servir de inmediato.',
+      'Sellar la carne en la plancha 3-4 min por lado.',
+      'Tostar el pan en la plancha.',
+      'Armar con lechuga, tomate y cebolla (omitir lo que indique la nota).',
+      'Agregar salsas y cerrar.',
     ],
   },
-  Capuchino: {
-    tiempoMin: 3,
-    ingredientes: ['30 ml de espresso', '120 ml de leche', 'Espuma densa', 'Taza 8 oz'],
+  Cheeseburger: {
+    tiempoMin: 8,
+    ingredientes: ['Pan de hamburguesa', 'Carne de res 150 g', 'Queso amarillo', 'Vegetales', 'Salsas'],
     pasos: [
-      'Extraer 1 shot de espresso.',
-      'Vaporizar la leche generando espuma densa y abundante.',
-      'Servir en proporción 1/3 espresso, 1/3 leche, 1/3 espuma.',
-      'Espolvorear cacao si el cliente lo pide.',
+      'Sellar la carne en la plancha.',
+      'Fundir el queso sobre la carne al final.',
+      'Tostar el pan y armar con vegetales y salsas.',
+      'Cerrar y emplatar.',
     ],
   },
-  Americano: {
-    tiempoMin: 2,
-    ingredientes: ['30 ml de espresso', '150 ml de agua caliente', 'Vaso 12 oz'],
-    pasos: ['Extraer 1 shot de espresso.', 'Agregar agua caliente sobre el espresso.', 'Servir.'],
-  },
-  'Frappé de café': {
-    tiempoMin: 4,
-    ingredientes: ['60 ml de espresso frío', '120 ml de leche', 'Hielo', 'Jarabe', 'Crema batida'],
-    pasos: [
-      'Colocar espresso frío, leche, jarabe y hielo en la licuadora.',
-      'Licuar 20-30 seg hasta textura homogénea.',
-      'Servir en vaso alto.',
-      'Coronar con crema batida (omitir si el cliente la pide sin crema).',
-    ],
-  },
-  'Cold Brew': {
-    tiempoMin: 1,
-    ingredientes: ['180 ml de concentrado de cold brew', 'Hielo', 'Vaso 16 oz'],
-    pasos: ['Llenar el vaso con hielo.', 'Servir el concentrado de cold brew.', 'Remover suavemente.'],
-  },
-  'Panini caprese': {
-    tiempoMin: 6,
-    ingredientes: ['Pan ciabatta', 'Mozzarella fresca', 'Tomate', 'Albahaca', 'Aceite de oliva'],
-    pasos: [
-      'Abrir el pan y untar aceite de oliva.',
-      'Colocar mozzarella, tomate y albahaca.',
-      'Prensar en la plancha 4-5 min hasta dorar.',
-      'Cortar en diagonal y emplatar.',
-    ],
-  },
-  'Quiche de espinaca': {
+  'Papas fritas': {
     tiempoMin: 5,
-    ingredientes: ['Porción de quiche', 'Guarnición de ensalada'],
-    pasos: ['Calentar la porción de quiche 3-4 min.', 'Emplatar con guarnición de ensalada fresca.'],
-  },
-  'Sándwich de pollo': {
-    tiempoMin: 6,
-    ingredientes: ['Pan artesanal', 'Pollo a la plancha', 'Lechuga', 'Tomate', 'Mayonesa'],
+    ingredientes: ['Papas cortadas', 'Aceite', 'Sal'],
     pasos: [
-      'Calentar el pollo en la plancha.',
-      'Armar el sándwich con lechuga, tomate y mayonesa.',
-      'Omitir cebolla si la comanda lo indica.',
-      'Cortar y emplatar.',
+      'Freír a 175 °C durante 3-4 min hasta dorar.',
+      'Escurrir bien el exceso de aceite.',
+      'Salar de inmediato y servir.',
     ],
   },
-  Croissant: {
-    tiempoMin: 2,
-    ingredientes: ['Croissant', 'Plato'],
-    pasos: ['Calentar el croissant 1-2 min.', 'Emplatar.'],
+  'Nuggets de pollo': {
+    tiempoMin: 6,
+    ingredientes: ['Nuggets de pollo', 'Aceite', 'Salsa a elección'],
+    pasos: ['Freír a 175 °C durante 4-5 min.', 'Escurrir el aceite.', 'Servir con la salsa.'],
+  },
+  Salchipapas: {
+    tiempoMin: 7,
+    ingredientes: ['Papas fritas', 'Salchicha en rodajas', 'Salsas', 'Queso (opcional)'],
+    pasos: [
+      'Freír las papas hasta dorar.',
+      'Dorar las rodajas de salchicha en la plancha.',
+      'Mezclar papas y salchicha en el envase.',
+      'Coronar con salsas y queso si la nota lo indica.',
+    ],
+  },
+  'Alitas BBQ': {
+    tiempoMin: 10,
+    ingredientes: ['Alitas de pollo', 'Salsa BBQ', 'Aceite'],
+    pasos: [
+      'Freír las alitas a 175 °C durante 8-9 min.',
+      'Escurrir el exceso de aceite.',
+      'Bañar en salsa BBQ y mezclar.',
+      'Servir con aderezo ranch.',
+    ],
+  },
+  Boneless: {
+    tiempoMin: 9,
+    ingredientes: ['Trozos de pechuga empanizados', 'Salsa a elección', 'Aceite'],
+    pasos: [
+      'Freír los boneless 6-7 min hasta dorar.',
+      'Escurrir el aceite.',
+      'Bañar en la salsa elegida.',
+      'Servir con aderezo.',
+    ],
+  },
+  Malteada: {
+    tiempoMin: 4,
+    ingredientes: ['Helado de vainilla', 'Leche', 'Jarabe de sabor', 'Crema batida'],
+    pasos: [
+      'Licuar helado, leche y jarabe hasta textura cremosa.',
+      'Servir en vaso alto.',
+      'Coronar con crema batida.',
+    ],
   },
 };
 

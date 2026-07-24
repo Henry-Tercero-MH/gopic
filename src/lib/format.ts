@@ -23,3 +23,14 @@ export function formatTime(date: Date): string {
 export function minutesSince(date: Date): number {
   return Math.floor((Date.now() - date.getTime()) / 60000);
 }
+
+/**
+ * Tiempo transcurrido en formato mm:ss para el contador en vivo del KDS.
+ * `now` se pasa para forzar el re-render cada segundo desde el componente.
+ */
+export function elapsed(date: Date, now: number = Date.now()): string {
+  const totalSec = Math.max(0, Math.floor((now - date.getTime()) / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}

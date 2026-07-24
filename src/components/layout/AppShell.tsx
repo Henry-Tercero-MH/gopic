@@ -1,20 +1,28 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   ReceiptText,
+  Wallet,
   Utensils,
   ChefHat,
+  Users,
   Package,
+  Library,
   BookOpen,
+  ShoppingCart,
+  Tag,
   BarChart3,
   Settings,
   Bird,
   Sun,
   Moon,
+  PanelLeftClose,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { useAuth } from '@/lib/auth';
 
 interface NavItem {
   to: string;
@@ -23,74 +31,185 @@ interface NavItem {
   soon?: boolean;
 }
 
-const navItems: NavItem[] = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/pos', label: 'Punto de venta', icon: ReceiptText },
-  { to: '/mesas', label: 'Mesas', icon: Utensils },
-  { to: '/kds', label: 'Cocina / Barra', icon: ChefHat },
-  { to: '/inventario', label: 'Inventario', icon: Package },
-  { to: '/recetario', label: 'Recetario', icon: BookOpen },
-  { to: '/reportes', label: 'Reportes', icon: BarChart3 },
-  { to: '/config', label: 'Configuración', icon: Settings },
+interface NavGroup {
+  titulo: string;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    titulo: 'Operación',
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/pos', label: 'Punto de venta', icon: ReceiptText },
+      { to: '/caja', label: 'Caja', icon: Wallet },
+      { to: '/mesas', label: 'Mesas', icon: Utensils },
+      { to: '/kds', label: 'Cocina / Barra', icon: ChefHat },
+    ],
+  },
+  {
+    titulo: 'Gestión',
+    items: [
+      { to: '/clientes', label: 'Clientes', icon: Users },
+      { to: '/inventario', label: 'Inventario', icon: Package },
+      { to: '/catalogos', label: 'Catálogos', icon: Library },
+      { to: '/recetario', label: 'Recetario', icon: BookOpen },
+      { to: '/compras', label: 'Compras', icon: ShoppingCart, soon: true },
+      { to: '/promociones', label: 'Promociones', icon: Tag, soon: true },
+    ],
+  },
+  {
+    titulo: 'Análisis y sistema',
+    items: [
+      { to: '/reportes', label: 'Reportes', icon: BarChart3 },
+      { to: '/config', label: 'Configuración', icon: Settings },
+    ],
+  },
 ];
 
+const THEME_KEY = 'gopic.theme';
+const COLLAPSE_KEY = 'gopic.sidebar-collapsed';
+
 export function AppShell() {
-  const [dark, setDark] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const [dark, setDark] = useState(() => localStorage.getItem(THEME_KEY) === 'dark');
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
   }, [dark]);
+
+  useEffect(() => {
+    localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+  }, [collapsed]);
+
+  function cerrarSesion() {
+    logout();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <div className="flex h-full">
       {/* Sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
-        <div className="flex h-16 items-center gap-2 px-4">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-500 text-text-invert">
-            <Bird size={20} />
-          </span>
-          <div className="leading-tight">
-            <div className="font-display text-lg font-semibold text-brand-700">GOPIC</div>
-            <div className="text-xs text-text-muted">Preparaciones con sabor</div>
-          </div>
+      <aside
+        className={cn(
+          'hidden shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-200 md:flex',
+          collapsed ? 'w-16' : 'w-60',
+        )}
+      >
+        {/* Marca + colapsar */}
+        <div className={cn('flex h-16 items-center px-3', collapsed && 'justify-center px-0')}>
+          {collapsed ? (
+            <button
+              onClick={() => setCollapsed(false)}
+              title="Expandir menú"
+              aria-label="Expandir menú"
+              className="grid h-9 w-9 place-items-center rounded-full bg-metal-red text-text-invert shadow-card"
+            >
+              <Bird size={20} />
+            </button>
+          ) : (
+            <>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-metal-red text-text-invert shadow-card">
+                <Bird size={20} />
+              </span>
+              <div className="ml-2 min-w-0 leading-tight">
+                <div className="font-display text-lg font-semibold text-brand-700">GOPIC</div>
+                <div className="truncate text-xs text-text-muted">Preparaciones con sabor</div>
+              </div>
+              <button
+                onClick={() => setCollapsed(true)}
+                title="Colapsar menú"
+                aria-label="Colapsar menú"
+                className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border text-text-muted hover:bg-surface-sunk hover:text-text"
+              >
+                <PanelLeftClose size={16} />
+              </button>
+            </>
+          )}
         </div>
 
-        <nav className="flex-1 space-y-1 px-2 py-2">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-action-50 text-action-700'
-                    : 'text-text-muted hover:bg-surface-sunk hover:text-text',
-                )
-              }
-            >
-              <item.icon size={18} className="shrink-0" />
-              <span className="flex-1">{item.label}</span>
-              {item.soon && (
-                <span className="rounded-full bg-surface-sunk px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
-                  pronto
-                </span>
+        <nav className="flex-1 overflow-y-auto scroll-thin px-2 py-2">
+          {navGroups.map((grupo, gi) => (
+            <div key={grupo.titulo} className={cn(gi > 0 && (collapsed ? 'mt-2 border-t border-border pt-2' : 'mt-4'))}>
+              {!collapsed && (
+                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                  {grupo.titulo}
+                </p>
               )}
-            </NavLink>
+              <div className="space-y-1">
+                {grupo.items.map((item) =>
+                  item.soon ? (
+                    <div
+                      key={item.to}
+                      title={collapsed ? `${item.label} (pronto)` : undefined}
+                      className={cn(
+                        'flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-text-muted/60',
+                        collapsed && 'justify-center px-0',
+                      )}
+                    >
+                      <item.icon size={18} className="shrink-0" />
+                      {!collapsed && <span className="flex-1">{item.label}</span>}
+                      {!collapsed && (
+                        <span className="rounded-full bg-surface-sunk px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
+                          pronto
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      title={collapsed ? item.label : undefined}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                          collapsed && 'justify-center px-0',
+                          isActive
+                            ? 'bg-action-50 text-action-700'
+                            : 'text-text-muted hover:bg-surface-sunk hover:text-text',
+                        )
+                      }
+                    >
+                      <item.icon size={18} className="shrink-0" />
+                      {!collapsed && <span className="flex-1">{item.label}</span>}
+                    </NavLink>
+                  ),
+                )}
+              </div>
+            </div>
           ))}
         </nav>
 
-        <div className="border-t border-border p-3">
-          <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-100 text-brand-700 font-semibold">
-              AR
+        <div className="space-y-2 border-t border-border p-3">
+          <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-100 font-semibold text-brand-700">
+              {user?.iniciales ?? '—'}
             </span>
-            <div className="flex-1 leading-tight">
-              <div className="text-sm font-medium text-text">Ana Rodríguez</div>
-              <div className="text-xs text-text-muted">Cajera · Turno mañana</div>
-            </div>
+            {!collapsed && (
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-sm font-medium text-text">{user?.nombre ?? 'Invitado'}</div>
+                <div className="truncate text-xs text-text-muted">{user?.rol ?? ''}</div>
+              </div>
+            )}
           </div>
+
+          <button
+            onClick={cerrarSesion}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10',
+              collapsed && 'justify-center px-0',
+            )}
+          >
+            <LogOut size={18} className="shrink-0" />
+            {!collapsed && <span>Cerrar sesión</span>}
+          </button>
         </div>
       </aside>
 

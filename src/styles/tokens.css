@@ -4,26 +4,35 @@
  * Cambiar --font-body o cualquier color reestiliza la aplicación entera.
  */
 :root {
-  /* ---- Marca: coral GOPIC (pingüino / "G") ---- */
-  --color-brand-50: #fff0ed;
-  --color-brand-100: #ffdad3;
-  --color-brand-300: #ff9d8f;
-  --color-brand-500: #f76451;
-  --color-brand-700: #d8402c;
-  --color-brand-900: #8f2417;
+  /* ---- Marca: rojo brillante GOPIC (pingüino / "G") ---- */
+  --color-brand-50: #fff0ee;
+  --color-brand-100: #ffd3cb;
+  --color-brand-300: #ff7768;
+  --color-brand-500: #f22a1b;
+  --color-brand-700: #c11409;
+  --color-brand-900: #7a0c05;
 
   /* ---- Acción / interactivo: verde lima GOPIC (la "O") ---- */
-  --color-action-50: #eefbe0;
-  --color-action-500: #7cc043;
-  --color-action-600: #63a233;
-  --color-action-700: #4d7f27;
+  --color-action-50: #eefbd6;
+  --color-action-500: #7fc81a;
+  --color-action-600: #66a50f;
+  --color-action-700: #4e7e0b;
 
-  /* ---- Acento: amarillo/naranja GOPIC ("P I C") ---- */
-  --color-accent-400: #ffb020;
-  --color-accent-600: #f59009;
+  /* ---- Acento: dorado / naranja GOPIC ("P I C") ----
+     accent-400 (gold) es solo relleno; accent-600 se oscureció para servir como
+     TINTA sobre fondo claro y pasar AA (4.5:1) en notas y chips. */
+  --color-accent-400: #fbc013;
+  --color-accent-600: #a34f0a;
 
-  /* ---- Info / secundario: teal del eslogan ---- */
-  --color-info: #1f9aa6;
+  /* ---- Info / secundario: teal del eslogan (oscurecido para texto AA) ---- */
+  --color-info: #076974;
+
+  /* ---- Degradados metálicos (brillo tipo cromo) del logo ---- */
+  --gradient-metal-red: linear-gradient(145deg, #ff9e92 0%, #f22a1b 38%, #a5100a 55%, #f22a1b 78%, #ff9e92 100%);
+  --gradient-metal-lime: linear-gradient(145deg, #c8f07e 0%, #7fc81a 38%, #4e7e0b 55%, #7fc81a 78%, #c8f07e 100%);
+  --gradient-metal-gold: linear-gradient(145deg, #fee9a0 0%, #fbc013 38%, #b8860b 55%, #fbc013 78%, #fee9a0 100%);
+  --gradient-metal-orange: linear-gradient(145deg, #ffc98a 0%, #f5811a 38%, #b85a08 55%, #f5811a 78%, #ffc98a 100%);
+  --gradient-metal-teal: linear-gradient(145deg, #7fd9e2 0%, #0ba5b4 38%, #076974 55%, #0ba5b4 78%, #7fd9e2 100%);
 
   /* ---- Neutrales cálidos (fondo rosado del logo) ---- */
   --color-surface: #ffffff;
@@ -31,13 +40,17 @@
   --color-surface-sunk: #ffe9e4;
   --color-border: #ffd9d1;
   --color-text: #2a201d;
-  --color-text-muted: #8a756e;
+  --color-text-muted: #6f5b54;
   --color-text-invert: #ffffff;
+  /* Tinta fija para superficies de marca constantes entre temas (botón lima).
+     NO se redefine en dark: el fondo action-500 es el mismo en ambos temas. */
+  --color-on-action: #2a201d;
 
-  /* ---- Semánticos ---- */
-  --color-success: #4caf2f;
-  --color-warning: #f59009;
-  --color-danger: #ef3d4e;
+  /* ---- Semánticos (valores de TINTA: legibles como texto sobre fondo claro
+     y sobre sus propios tintes translúcidos; en dark se redefinen más claros) ---- */
+  --color-success: #356b0e;
+  --color-warning: #8a5806;
+  --color-danger: #c4162a;
 
   /* ---- Tipografía ---- */
   --font-display: 'Fraunces', Georgia, serif;
@@ -91,4 +104,12 @@
   --color-border: #4a352d;
   --color-text: #fbf1ec;
   --color-text-muted: #bda69c;
+
+  /* Los semánticos se REDEFINEN más claros para leerse sobre superficies oscuras
+     (no se invierten): sobre dark-surface y sobre sus tintes alfa pasan AA. */
+  --color-accent-600: #ffb454;
+  --color-info: #4fd0dd;
+  --color-success: #8fe04e;
+  --color-warning: #f5c14e;
+  --color-danger: #ff7a86;
 }

@@ -11,7 +11,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-action-500 text-text-invert hover:bg-action-600 active:bg-action-700',
+  // Tinta oscura fija sobre el lima de marca: 7.7:1 en ambos temas (vs 2.06:1 con blanco). Ver /color.
+  primary: 'bg-action-500 text-on-action hover:bg-action-600 active:bg-action-700',
   secondary: 'bg-surface text-text border border-border hover:bg-surface-sunk',
   ghost: 'bg-transparent text-text hover:bg-surface-sunk',
   danger: 'bg-danger text-text-invert hover:opacity-90',

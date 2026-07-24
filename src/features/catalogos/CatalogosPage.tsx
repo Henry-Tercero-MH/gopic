@@ -1,0 +1,759 @@
+import { useState, type ReactNode } from 'react';
+import { Plus, Pencil, Trash2, X, Check, Package, Tags, Boxes, Truck, Ruler, type LucideIcon } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { cn } from '@/lib/cn';
+import { formatCurrency } from '@/lib/format';
+import {
+  productos as productosSeed,
+  categorias as categoriasSeed,
+  insumos as insumosSeed,
+  type Producto,
+  type Categoria,
+  type Insumo,
+  type NivelStock,
+} from '@/mock/data';
+
+interface Proveedor {
+  id: string;
+  nombre: string;
+  contacto: string;
+  telefono: string;
+  email: string;
+}
+
+type TipoMedida = 'Peso' | 'Volumen' | 'Unidad';
+
+interface Medida {
+  id: string;
+  nombre: string;
+  abreviatura: string;
+  tipo: TipoMedida;
+}
+
+const MEDIDAS_SEED: Medida[] = [
+  { id: 'med-kg', nombre: 'Kilogramo', abreviatura: 'kg', tipo: 'Peso' },
+  { id: 'med-g', nombre: 'Gramo', abreviatura: 'g', tipo: 'Peso' },
+  { id: 'med-l', nombre: 'Litro', abreviatura: 'L', tipo: 'Volumen' },
+  { id: 'med-ml', nombre: 'Mililitro', abreviatura: 'ml', tipo: 'Volumen' },
+  { id: 'med-pz', nombre: 'Pieza', abreviatura: 'pz', tipo: 'Unidad' },
+  { id: 'med-bot', nombre: 'Botella', abreviatura: 'bot', tipo: 'Unidad' },
+  { id: 'med-caja', nombre: 'Caja', abreviatura: 'caja', tipo: 'Unidad' },
+];
+
+const TIPOS_MEDIDA: TipoMedida[] = ['Peso', 'Volumen', 'Unidad'];
+
+const PROVEEDORES_SEED: Proveedor[] = [
+  { id: 'prov-1', nombre: 'Distribuidora La Granja', contacto: 'Elena Ruiz', telefono: '+502 5555 0011', email: 'ventas@lagranja.gt' },
+  { id: 'prov-2', nombre: 'Carnes del Valle', contacto: 'Mario Solís', telefono: '+502 5555 0022', email: 'pedidos@carnesdelvalle.gt' },
+  { id: 'prov-3', nombre: 'Empaques y Desechables SA', contacto: 'Rita Gómez', telefono: '+502 5555 0033', email: 'contacto@empaques.gt' },
+];
+
+const uid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+/** Calcula el nivel de stock a partir de existencia vs mínimo. */
+function calcularNivel(existencia: number, minimo: number): NivelStock {
+  if (existencia <= minimo * 0.4) return 'critico';
+  if (existencia < minimo) return 'bajo';
+  return 'ok';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Página                                                            */
+/* ------------------------------------------------------------------ */
+
+type Pestana = 'productos' | 'categorias' | 'medidas' | 'insumos' | 'proveedores';
+
+const PESTANAS: { id: Pestana; label: string; icon: LucideIcon }[] = [
+  { id: 'productos', label: 'Productos', icon: Package },
+  { id: 'categorias', label: 'Categorías', icon: Tags },
+  { id: 'medidas', label: 'Unidades de medida', icon: Ruler },
+  { id: 'insumos', label: 'Insumos', icon: Boxes },
+  { id: 'proveedores', label: 'Proveedores', icon: Truck },
+];
+
+export function CatalogosPage() {
+  const [pestana, setPestana] = useState<Pestana>('productos');
+  const [productos, setProductos] = useState<Producto[]>(() => productosSeed.map((p) => ({ ...p })));
+  const [categorias, setCategorias] = useState<Categoria[]>(() => categoriasSeed.map((c) => ({ ...c })));
+  const [medidas, setMedidas] = useState<Medida[]>(() => MEDIDAS_SEED.map((m) => ({ ...m })));
+  const [insumos, setInsumos] = useState<Insumo[]>(() => insumosSeed.map((i) => ({ ...i })));
+  const [proveedores, setProveedores] = useState<Proveedor[]>(() => PROVEEDORES_SEED.map((p) => ({ ...p })));
+
+  return (
+    <div className="space-y-6 p-6">
+      <PageHeader title="Catálogos" subtitle="Administra los datos maestros del sistema" />
+
+      <div className="flex gap-1 overflow-x-auto border-b border-border scroll-thin">
+        {PESTANAS.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => setPestana(p.id)}
+            className={cn(
+              '-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
+              pestana === p.id
+                ? 'border-action-500 text-action-700'
+                : 'border-transparent text-text-muted hover:text-text',
+            )}
+          >
+            <p.icon size={16} /> {p.label}
+          </button>
+        ))}
+      </div>
+
+      {pestana === 'productos' && (
+        <ProductosCat productos={productos} setProductos={setProductos} categorias={categorias} />
+      )}
+      {pestana === 'categorias' && (
+        <CategoriasCat categorias={categorias} setCategorias={setCategorias} productos={productos} />
+      )}
+      {pestana === 'medidas' && <MedidasCat medidas={medidas} setMedidas={setMedidas} insumos={insumos} />}
+      {pestana === 'insumos' && <InsumosCat insumos={insumos} setInsumos={setInsumos} medidas={medidas} />}
+      {pestana === 'proveedores' && <ProveedoresCat proveedores={proveedores} setProveedores={setProveedores} />}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Productos                                                         */
+/* ================================================================== */
+
+function ProductosCat({
+  productos,
+  setProductos,
+  categorias,
+}: {
+  productos: Producto[];
+  setProductos: React.Dispatch<React.SetStateAction<Producto[]>>;
+  categorias: Categoria[];
+}) {
+  const [editando, setEditando] = useState<Producto | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const nombreCat = (id: string) => categorias.find((c) => c.id === id)?.nombre ?? '—';
+
+  function abrirNuevo() {
+    setEditando(null);
+    setAbierto(true);
+  }
+  function abrirEditar(p: Producto) {
+    setEditando(p);
+    setAbierto(true);
+  }
+  function guardar(p: Producto) {
+    setProductos((prev) => (prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p]));
+    setAbierto(false);
+  }
+
+  return (
+    <CatalogoLayout titulo="Productos" total={productos.length} onNuevo={abrirNuevo}>
+      <Tabla
+        columnas={[
+          {
+            header: 'Producto',
+            render: (p: Producto) => (
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-alt text-xl">
+                  {p.imagen ? <img src={p.imagen} alt="" className="h-full w-full object-cover" /> : p.emoji}
+                </span>
+                <span className="font-medium text-text">{p.nombre}</span>
+              </div>
+            ),
+          },
+          { header: 'Categoría', render: (p: Producto) => <span className="text-text-muted">{nombreCat(p.categoriaId)}</span> },
+          { header: 'Precio', render: (p: Producto) => <span className="num font-semibold text-text">{formatCurrency(p.precio)}</span> },
+          { header: 'Popular', render: (p: Producto) => (p.destacado ? <Badge tone="accent">Popular</Badge> : <span className="text-text-muted">—</span>) },
+        ]}
+        filas={productos}
+        onEditar={abrirEditar}
+        onEliminar={(p) => setProductos((prev) => prev.filter((x) => x.id !== p.id))}
+      />
+
+      {abierto && (
+        <ProductoModal producto={editando} categorias={categorias} onCerrar={() => setAbierto(false)} onGuardar={guardar} />
+      )}
+    </CatalogoLayout>
+  );
+}
+
+function ProductoModal({
+  producto,
+  categorias,
+  onCerrar,
+  onGuardar,
+}: {
+  producto: Producto | null;
+  categorias: Categoria[];
+  onCerrar: () => void;
+  onGuardar: (p: Producto) => void;
+}) {
+  const [nombre, setNombre] = useState(producto?.nombre ?? '');
+  const [categoriaId, setCategoriaId] = useState(producto?.categoriaId ?? categorias[0]?.id ?? '');
+  const [precio, setPrecio] = useState(String(producto?.precio ?? ''));
+  const [emoji, setEmoji] = useState(producto?.emoji ?? '🍽️');
+  const [imagen, setImagen] = useState(producto?.imagen ?? '');
+  const [destacado, setDestacado] = useState(producto?.destacado ?? false);
+  const valido = nombre.trim() !== '' && parseFloat(precio) > 0 && categoriaId !== '';
+
+  return (
+    <ModalShell titulo={producto ? 'Editar producto' : 'Nuevo producto'} onCerrar={onCerrar}>
+      <div className="space-y-4 p-4">
+        <Campo label="Nombre">
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Categoría">
+            <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={inputCls}>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>{c.emoji} {c.nombre}</option>
+              ))}
+            </select>
+          </Campo>
+          <Campo label="Precio (Q)">
+            <input type="number" min={0} step="0.01" value={precio} onChange={(e) => setPrecio(e.target.value)} className={cn(inputCls, 'num')} />
+          </Campo>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Emoji (respaldo)">
+            <input value={emoji} onChange={(e) => setEmoji(e.target.value)} className={inputCls} />
+          </Campo>
+          <Campo label="URL de imagen">
+            <input value={imagen} onChange={(e) => setImagen(e.target.value)} placeholder="https://…" className={inputCls} />
+          </Campo>
+        </div>
+        <button onClick={() => setDestacado((v) => !v)} className="flex items-center gap-2">
+          <Switch on={destacado} />
+          <span className="text-sm text-text">Marcar como “Popular”</span>
+        </button>
+      </div>
+      <PieModal
+        onCerrar={onCerrar}
+        valido={valido}
+        onGuardar={() =>
+          onGuardar({
+            id: producto?.id ?? uid('p'),
+            nombre: nombre.trim(),
+            categoriaId,
+            precio: parseFloat(precio),
+            emoji: emoji || '🍽️',
+            imagen: imagen.trim() || undefined,
+            destacado,
+          })
+        }
+      />
+    </ModalShell>
+  );
+}
+
+/* ================================================================== */
+/*  Categorías                                                        */
+/* ================================================================== */
+
+function CategoriasCat({
+  categorias,
+  setCategorias,
+  productos,
+}: {
+  categorias: Categoria[];
+  setCategorias: React.Dispatch<React.SetStateAction<Categoria[]>>;
+  productos: Producto[];
+}) {
+  const [editando, setEditando] = useState<Categoria | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const cuenta = (id: string) => productos.filter((p) => p.categoriaId === id).length;
+
+  function guardar(c: Categoria) {
+    setCategorias((prev) => (prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c]));
+    setAbierto(false);
+  }
+
+  return (
+    <CatalogoLayout titulo="Categorías" total={categorias.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
+      <Tabla
+        columnas={[
+          { header: 'Categoría', render: (c: Categoria) => <span className="font-medium text-text"><span className="mr-2 text-lg">{c.emoji}</span>{c.nombre}</span> },
+          { header: 'Productos', render: (c: Categoria) => <span className="num text-text-muted">{cuenta(c.id)}</span> },
+        ]}
+        filas={categorias}
+        onEditar={(c) => { setEditando(c); setAbierto(true); }}
+        onEliminar={(c) => setCategorias((prev) => prev.filter((x) => x.id !== c.id))}
+      />
+
+      {abierto && <CategoriaModal categoria={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
+    </CatalogoLayout>
+  );
+}
+
+function CategoriaModal({
+  categoria,
+  onCerrar,
+  onGuardar,
+}: {
+  categoria: Categoria | null;
+  onCerrar: () => void;
+  onGuardar: (c: Categoria) => void;
+}) {
+  const [nombre, setNombre] = useState(categoria?.nombre ?? '');
+  const [emoji, setEmoji] = useState(categoria?.emoji ?? '🍴');
+  const valido = nombre.trim() !== '';
+
+  return (
+    <ModalShell titulo={categoria ? 'Editar categoría' : 'Nueva categoría'} onCerrar={onCerrar}>
+      <div className="space-y-4 p-4">
+        <Campo label="Nombre">
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
+        </Campo>
+        <Campo label="Emoji">
+          <input value={emoji} onChange={(e) => setEmoji(e.target.value)} className={cn(inputCls, 'w-24 text-center text-lg')} />
+        </Campo>
+      </div>
+      <PieModal
+        onCerrar={onCerrar}
+        valido={valido}
+        onGuardar={() => onGuardar({ id: categoria?.id ?? uid('cat'), nombre: nombre.trim(), emoji: emoji || '🍴' })}
+      />
+    </ModalShell>
+  );
+}
+
+/* ================================================================== */
+/*  Unidades de medida                                                */
+/* ================================================================== */
+
+const tipoMedidaTone: Record<TipoMedida, 'brand' | 'info' | 'accent'> = {
+  Peso: 'brand',
+  Volumen: 'info',
+  Unidad: 'accent',
+};
+
+function MedidasCat({
+  medidas,
+  setMedidas,
+  insumos,
+}: {
+  medidas: Medida[];
+  setMedidas: React.Dispatch<React.SetStateAction<Medida[]>>;
+  insumos: Insumo[];
+}) {
+  const [editando, setEditando] = useState<Medida | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const enUso = (abrev: string) => insumos.filter((i) => i.unidad === abrev).length;
+
+  function guardar(m: Medida) {
+    setMedidas((prev) => (prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? m : x)) : [...prev, m]));
+    setAbierto(false);
+  }
+
+  return (
+    <CatalogoLayout titulo="Unidades de medida" total={medidas.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
+      <Tabla
+        columnas={[
+          { header: 'Unidad', render: (m: Medida) => <span className="font-medium text-text">{m.nombre}</span> },
+          { header: 'Abreviatura', render: (m: Medida) => <span className="num text-text-muted">{m.abreviatura}</span> },
+          { header: 'Tipo', render: (m: Medida) => <Badge tone={tipoMedidaTone[m.tipo]}>{m.tipo}</Badge> },
+          { header: 'Insumos', render: (m: Medida) => <span className="num text-text-muted">{enUso(m.abreviatura)}</span> },
+        ]}
+        filas={medidas}
+        onEditar={(m) => { setEditando(m); setAbierto(true); }}
+        onEliminar={(m) => setMedidas((prev) => prev.filter((x) => x.id !== m.id))}
+      />
+
+      {abierto && <MedidaModal medida={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
+    </CatalogoLayout>
+  );
+}
+
+function MedidaModal({
+  medida,
+  onCerrar,
+  onGuardar,
+}: {
+  medida: Medida | null;
+  onCerrar: () => void;
+  onGuardar: (m: Medida) => void;
+}) {
+  const [nombre, setNombre] = useState(medida?.nombre ?? '');
+  const [abreviatura, setAbreviatura] = useState(medida?.abreviatura ?? '');
+  const [tipo, setTipo] = useState<TipoMedida>(medida?.tipo ?? 'Peso');
+  const valido = nombre.trim() !== '' && abreviatura.trim() !== '';
+
+  return (
+    <ModalShell titulo={medida ? 'Editar unidad' : 'Nueva unidad de medida'} onCerrar={onCerrar}>
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Nombre">
+            <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus placeholder="Kilogramo" className={inputCls} />
+          </Campo>
+          <Campo label="Abreviatura">
+            <input value={abreviatura} onChange={(e) => setAbreviatura(e.target.value)} placeholder="kg" className={cn(inputCls, 'num')} />
+          </Campo>
+        </div>
+        <Campo label="Tipo">
+          <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoMedida)} className={inputCls}>
+            {TIPOS_MEDIDA.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </Campo>
+      </div>
+      <PieModal
+        onCerrar={onCerrar}
+        valido={valido}
+        onGuardar={() => onGuardar({ id: medida?.id ?? uid('med'), nombre: nombre.trim(), abreviatura: abreviatura.trim(), tipo })}
+      />
+    </ModalShell>
+  );
+}
+
+/* ================================================================== */
+/*  Insumos                                                           */
+/* ================================================================== */
+
+const nivelBadge: Record<NivelStock, { tone: 'success' | 'warning' | 'danger'; label: string }> = {
+  ok: { tone: 'success', label: 'OK' },
+  bajo: { tone: 'warning', label: 'Bajo' },
+  critico: { tone: 'danger', label: 'Crítico' },
+};
+
+function InsumosCat({
+  insumos,
+  setInsumos,
+  medidas,
+}: {
+  insumos: Insumo[];
+  setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>>;
+  medidas: Medida[];
+}) {
+  const [editando, setEditando] = useState<Insumo | null>(null);
+  const [abierto, setAbierto] = useState(false);
+
+  function guardar(i: Insumo) {
+    setInsumos((prev) => (prev.some((x) => x.id === i.id) ? prev.map((x) => (x.id === i.id ? i : x)) : [...prev, i]));
+    setAbierto(false);
+  }
+
+  return (
+    <CatalogoLayout titulo="Insumos" total={insumos.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
+      <Tabla
+        columnas={[
+          { header: 'Insumo', render: (i: Insumo) => <span className="font-medium text-text">{i.nombre}</span> },
+          { header: 'Categoría', render: (i: Insumo) => <span className="text-text-muted">{i.categoria}</span> },
+          { header: 'Existencia', render: (i: Insumo) => <span className="num text-text">{i.existencia} {i.unidad}</span> },
+          { header: 'Mínimo', render: (i: Insumo) => <span className="num text-text-muted">{i.minimo} {i.unidad}</span> },
+          { header: 'Costo', render: (i: Insumo) => <span className="num text-text">{formatCurrency(i.costoUnitario)}</span> },
+          { header: 'Nivel', render: (i: Insumo) => <Badge tone={nivelBadge[i.nivel].tone}>{nivelBadge[i.nivel].label}</Badge> },
+        ]}
+        filas={insumos}
+        onEditar={(i) => { setEditando(i); setAbierto(true); }}
+        onEliminar={(i) => setInsumos((prev) => prev.filter((x) => x.id !== i.id))}
+      />
+
+      {abierto && <InsumoModal insumo={editando} medidas={medidas} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
+    </CatalogoLayout>
+  );
+}
+
+function InsumoModal({
+  insumo,
+  medidas,
+  onCerrar,
+  onGuardar,
+}: {
+  insumo: Insumo | null;
+  medidas: Medida[];
+  onCerrar: () => void;
+  onGuardar: (i: Insumo) => void;
+}) {
+  const [nombre, setNombre] = useState(insumo?.nombre ?? '');
+  const [categoria, setCategoria] = useState(insumo?.categoria ?? '');
+  const [existencia, setExistencia] = useState(String(insumo?.existencia ?? ''));
+  const [unidad, setUnidad] = useState(insumo?.unidad ?? medidas[0]?.abreviatura ?? 'u');
+  const [minimo, setMinimo] = useState(String(insumo?.minimo ?? ''));
+  const [costo, setCosto] = useState(String(insumo?.costoUnitario ?? ''));
+  const valido = nombre.trim() !== '' && existencia !== '' && minimo !== '';
+
+  return (
+    <ModalShell titulo={insumo ? 'Editar insumo' : 'Nuevo insumo'} onCerrar={onCerrar}>
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Nombre">
+            <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
+          </Campo>
+          <Campo label="Categoría">
+            <input value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ej. Lácteos" className={inputCls} />
+          </Campo>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Campo label="Existencia">
+            <input type="number" min={0} step="0.01" value={existencia} onChange={(e) => setExistencia(e.target.value)} className={cn(inputCls, 'num')} />
+          </Campo>
+          <Campo label="Unidad">
+            <select value={unidad} onChange={(e) => setUnidad(e.target.value)} className={inputCls}>
+              {medidas.map((m) => (
+                <option key={m.id} value={m.abreviatura}>{m.abreviatura} · {m.nombre}</option>
+              ))}
+              {!medidas.some((m) => m.abreviatura === unidad) && <option value={unidad}>{unidad}</option>}
+            </select>
+          </Campo>
+          <Campo label="Mínimo">
+            <input type="number" min={0} step="0.01" value={minimo} onChange={(e) => setMinimo(e.target.value)} className={cn(inputCls, 'num')} />
+          </Campo>
+        </div>
+        <Campo label="Costo unitario (Q)">
+          <input type="number" min={0} step="0.01" value={costo} onChange={(e) => setCosto(e.target.value)} className={cn(inputCls, 'num')} />
+        </Campo>
+      </div>
+      <PieModal
+        onCerrar={onCerrar}
+        valido={valido}
+        onGuardar={() => {
+          const ex = parseFloat(existencia) || 0;
+          const min = parseFloat(minimo) || 0;
+          onGuardar({
+            id: insumo?.id ?? uid('i'),
+            nombre: nombre.trim(),
+            categoria: categoria.trim() || 'General',
+            existencia: ex,
+            unidad: unidad || 'u',
+            minimo: min,
+            costoUnitario: parseFloat(costo) || 0,
+            nivel: calcularNivel(ex, min),
+          });
+        }}
+      />
+    </ModalShell>
+  );
+}
+
+/* ================================================================== */
+/*  Proveedores                                                       */
+/* ================================================================== */
+
+function ProveedoresCat({
+  proveedores,
+  setProveedores,
+}: {
+  proveedores: Proveedor[];
+  setProveedores: React.Dispatch<React.SetStateAction<Proveedor[]>>;
+}) {
+  const [editando, setEditando] = useState<Proveedor | null>(null);
+  const [abierto, setAbierto] = useState(false);
+
+  function guardar(p: Proveedor) {
+    setProveedores((prev) => (prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p]));
+    setAbierto(false);
+  }
+
+  return (
+    <CatalogoLayout titulo="Proveedores" total={proveedores.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
+      <Tabla
+        columnas={[
+          { header: 'Proveedor', render: (p: Proveedor) => <span className="font-medium text-text">{p.nombre}</span> },
+          { header: 'Contacto', render: (p: Proveedor) => <span className="text-text-muted">{p.contacto}</span> },
+          { header: 'Teléfono', render: (p: Proveedor) => <span className="num text-text-muted">{p.telefono}</span> },
+          { header: 'Correo', render: (p: Proveedor) => <span className="text-text-muted">{p.email}</span> },
+        ]}
+        filas={proveedores}
+        onEditar={(p) => { setEditando(p); setAbierto(true); }}
+        onEliminar={(p) => setProveedores((prev) => prev.filter((x) => x.id !== p.id))}
+      />
+
+      {abierto && <ProveedorModal proveedor={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
+    </CatalogoLayout>
+  );
+}
+
+function ProveedorModal({
+  proveedor,
+  onCerrar,
+  onGuardar,
+}: {
+  proveedor: Proveedor | null;
+  onCerrar: () => void;
+  onGuardar: (p: Proveedor) => void;
+}) {
+  const [nombre, setNombre] = useState(proveedor?.nombre ?? '');
+  const [contacto, setContacto] = useState(proveedor?.contacto ?? '');
+  const [telefono, setTelefono] = useState(proveedor?.telefono ?? '');
+  const [email, setEmail] = useState(proveedor?.email ?? '');
+  const valido = nombre.trim() !== '';
+
+  return (
+    <ModalShell titulo={proveedor ? 'Editar proveedor' : 'Nuevo proveedor'} onCerrar={onCerrar}>
+      <div className="space-y-4 p-4">
+        <Campo label="Nombre / Razón social">
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
+        </Campo>
+        <Campo label="Contacto">
+          <input value={contacto} onChange={(e) => setContacto(e.target.value)} className={inputCls} />
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Teléfono">
+            <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inputCls} />
+          </Campo>
+          <Campo label="Correo">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+          </Campo>
+        </div>
+      </div>
+      <PieModal
+        onCerrar={onCerrar}
+        valido={valido}
+        onGuardar={() =>
+          onGuardar({ id: proveedor?.id ?? uid('prov'), nombre: nombre.trim(), contacto: contacto.trim(), telefono: telefono.trim(), email: email.trim() })
+        }
+      />
+    </ModalShell>
+  );
+}
+
+/* ================================================================== */
+/*  Piezas reutilizables                                              */
+/* ================================================================== */
+
+const inputCls =
+  'mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none';
+
+function CatalogoLayout({
+  titulo,
+  total,
+  onNuevo,
+  children,
+}: {
+  titulo: string;
+  total: number;
+  onNuevo: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center justify-between border-b border-border p-4">
+        <div>
+          <h2 className="font-display text-lg font-semibold text-text">{titulo}</h2>
+          <p className="text-sm text-text-muted">{total} registro{total === 1 ? '' : 's'}</p>
+        </div>
+        <Button onClick={onNuevo}>
+          <Plus size={18} /> Nuevo
+        </Button>
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+interface Columna<T> {
+  header: string;
+  render: (row: T) => ReactNode;
+}
+
+function Tabla<T extends { id: string }>({
+  columnas,
+  filas,
+  onEditar,
+  onEliminar,
+}: {
+  columnas: Columna<T>[];
+  filas: T[];
+  onEditar: (row: T) => void;
+  onEliminar: (row: T) => void;
+}) {
+  if (filas.length === 0) {
+    return <p className="p-8 text-center text-sm text-text-muted">Sin registros. Agrega el primero con “Nuevo”.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
+            {columnas.map((c) => (
+              <th key={c.header} className="px-4 py-2.5 font-semibold">{c.header}</th>
+            ))}
+            <th className="px-4 py-2.5 text-right font-semibold">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((row) => (
+            <tr key={row.id} className="border-b border-border last:border-0 hover:bg-surface-alt">
+              {columnas.map((c) => (
+                <td key={c.header} className="px-4 py-3">{c.render(row)}</td>
+              ))}
+              <td className="px-4 py-3">
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    onClick={() => onEditar(row)}
+                    aria-label="Editar"
+                    className="grid h-8 w-8 place-items-center rounded-md border border-border text-text-muted hover:bg-surface-sunk hover:text-text"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    onClick={() => onEliminar(row)}
+                    aria-label="Eliminar"
+                    className="grid h-8 w-8 place-items-center rounded-md border border-border text-danger hover:bg-danger/10"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Campo({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-text">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-modal grid place-items-center bg-text/40 p-4" onClick={onCerrar}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={titulo}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg overflow-hidden rounded-xl bg-surface shadow-modal"
+      >
+        <header className="flex items-center justify-between border-b border-border p-4">
+          <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
+          <button
+            onClick={onCerrar}
+            aria-label="Cerrar"
+            className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk"
+          >
+            <X size={18} />
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PieModal({ onCerrar, valido, onGuardar }: { onCerrar: () => void; valido: boolean; onGuardar: () => void }) {
+  return (
+    <footer className="flex justify-end gap-2 border-t border-border p-4">
+      <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
+      <Button disabled={!valido} onClick={onGuardar}>
+        <Check size={18} /> Guardar
+      </Button>
+    </footer>
+  );
+}
+
+function Switch({ on }: { on: boolean }) {
+  return (
+    <span className={cn('relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors', on ? 'bg-success' : 'bg-surface-sunk')}>
+      <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', on ? 'translate-x-4' : 'translate-x-0.5')} />
+    </span>
+  );
+}
