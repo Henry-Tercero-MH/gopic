@@ -18,11 +18,14 @@ import {
   Sun,
   Moon,
   PanelLeftClose,
+  Menu,
+  X,
   LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth';
+import { Drawer } from '@/components/ui/Drawer';
 
 interface NavItem {
   to: string;
@@ -76,6 +79,7 @@ export function AppShell() {
 
   const [dark, setDark] = useState(() => localStorage.getItem(THEME_KEY) === 'dark');
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
@@ -217,6 +221,14 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-4">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="grid h-9 w-9 place-items-center rounded-md border border-border bg-surface text-text-muted hover:bg-surface-sunk md:hidden"
+              aria-label="Abrir menú"
+            >
+              <Menu size={18} />
+            </button>
             <Bird size={20} className="text-brand-500 md:hidden" />
             <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-xs font-semibold text-success">
               <span className="h-2 w-2 rounded-full bg-success" /> Caja abierta · fondo Q500
@@ -242,6 +254,92 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+
+      <Drawer open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} side="left" ariaLabel="Menú principal" className="w-[86vw] max-w-xs">
+        <div className="flex h-16 items-center justify-between border-b border-border px-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-metal-red text-text-invert shadow-card">
+              <Bird size={20} />
+            </span>
+            <div className="leading-tight">
+              <div className="font-display text-base font-semibold text-brand-700">GOPIC</div>
+              <div className="text-xs text-text-muted">Menú principal</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="grid h-9 w-9 place-items-center rounded-md border border-border text-text-muted hover:bg-surface-sunk"
+            aria-label="Cerrar menú"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {navGroups.map((grupo, gi) => (
+            <div key={grupo.titulo} className={cn('mb-3', gi > 0 && 'mt-2')}>
+              <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                {grupo.titulo}
+              </p>
+              <div className="space-y-1">
+                {grupo.items.map((item) =>
+                  item.soon ? (
+                    <div
+                      key={item.to}
+                      className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-text-muted/60"
+                    >
+                      <item.icon size={18} className="shrink-0" />
+                      <span className="flex-1">{item.label}</span>
+                      <span className="rounded-full bg-surface-sunk px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
+                        pronto
+                      </span>
+                    </div>
+                  ) : (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-action-50 text-action-700'
+                            : 'text-text-muted hover:bg-surface-sunk hover:text-text',
+                        )
+                      }
+                    >
+                      <item.icon size={18} className="shrink-0" />
+                      <span className="flex-1">{item.label}</span>
+                    </NavLink>
+                  ),
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-border p-3">
+          <div className="mb-3 flex items-center gap-3 rounded-md bg-surface-sunk p-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-100 font-semibold text-brand-700">
+              {user?.iniciales ?? '—'}
+            </span>
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-sm font-medium text-text">{user?.nombre ?? 'Invitado'}</div>
+              <div className="truncate text-xs text-text-muted">{user?.rol ?? ''}</div>
+            </div>
+          </div>
+
+          <button
+            onClick={cerrarSesion}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+          >
+            <LogOut size={18} className="shrink-0" />
+            <span>Cerrar sesión</span>
+          </button>
+        </div>
+      </Drawer>
     </div>
   );
 }
