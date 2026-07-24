@@ -616,7 +616,7 @@ function Switch({ on }: { on: boolean }) {
         on ? 'bg-success' : 'bg-surface-sunk',
       )}
     >
-      <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', on ? 'translate-x-4' : 'translate-x-0.5')} />
+      <span className={cn('inline-block h-4 w-4 rounded-full bg-surface shadow transition-transform', on ? 'translate-x-4' : 'translate-x-0.5')} />
     </span>
   );
 }
@@ -629,7 +629,7 @@ function Checkbox({ on, onClick }: { on: boolean; onClick: () => void }) {
       aria-pressed={on}
       className={cn(
         'grid h-5 w-5 shrink-0 place-items-center rounded border transition-colors',
-        on ? 'border-action-500 bg-action-500 text-white' : 'border-border bg-surface',
+        on ? 'border-action-500 bg-action-500 text-on-action' : 'border-border bg-surface',
       )}
     >
       {on && <Check size={14} />}
