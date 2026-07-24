@@ -47,8 +47,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid h-full place-items-center bg-surface-sunk p-6">
-      <div className="flex w-full max-w-3xl flex-col items-center gap-10 lg:flex-row lg:justify-center lg:gap-16">
+    <div className="flex min-h-screen items-center justify-center bg-surface-sunk px-3 py-4 sm:px-6 sm:py-6">
+      <div className="flex w-full max-w-3xl flex-col items-center gap-6 sm:gap-10 lg:flex-row lg:justify-center lg:gap-16">
         {/* Lado del logo */}
         <aside className="hidden items-center lg:flex">
           <img
@@ -59,14 +59,14 @@ export function LoginPage() {
         </aside>
 
         {/* Lado del formulario */}
-        <main className="w-full max-w-sm">
+        <main className="w-full max-w-sm px-1 sm:px-0">
           {/* Logo compacto para móvil */}
           <div className="mb-6 flex justify-center lg:hidden">
             <img src="/img/logo.png" alt="GOPIC" className="h-24 w-24 rounded-full object-cover" />
           </div>
 
-          <div className="mb-8 text-center">
-            <h1 className="font-display text-2xl font-semibold text-text">{saludo()}</h1>
+          <div className="mb-6 text-center sm:mb-8">
+            <h1 className="font-display text-xl font-semibold text-text sm:text-2xl">{saludo()}</h1>
             <p className="mt-1 text-sm text-text-muted">Nos alegra tenerte de vuelta. Inicia sesión para continuar.</p>
           </div>
 

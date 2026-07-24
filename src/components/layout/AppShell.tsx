@@ -219,7 +219,7 @@ export function AppShell() {
 
       {/* Contenido */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-4">
+        <header className="flex h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 sm:px-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -230,7 +230,7 @@ export function AppShell() {
               <Menu size={18} />
             </button>
             <Bird size={20} className="text-brand-500 md:hidden" />
-            <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-xs font-semibold text-success">
+            <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-[11px] font-semibold text-success sm:text-xs">
               <span className="h-2 w-2 rounded-full bg-success" /> Caja abierta · fondo Q500
             </span>
           </div>

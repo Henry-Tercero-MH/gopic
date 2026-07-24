@@ -20,7 +20,7 @@ const iconTones: Record<NonNullable<StatCardProps['iconTone']>, string> = {
 
 export function StatCard({ label, value, hint, trend, icon: Icon, iconTone = 'brand' }: StatCardProps) {
   return (
-    <Card className="p-4">
+    <Card className="p-3 sm:p-4">
       <div className="flex items-start justify-between">
         <span className="text-sm text-text-muted">{label}</span>
         {Icon && (
@@ -29,7 +29,7 @@ export function StatCard({ label, value, hint, trend, icon: Icon, iconTone = 'br
           </span>
         )}
       </div>
-      <div className="num mt-2 text-2xl font-semibold text-text">{value}</div>
+      <div className="num mt-2 text-xl font-semibold text-text sm:text-2xl">{value}</div>
       <div className="mt-1 flex items-center gap-2">
         {trend && (
           <span

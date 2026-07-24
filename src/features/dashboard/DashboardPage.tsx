@@ -11,16 +11,16 @@ export function DashboardPage() {
   const maxHora = Math.max(...ventasPorHora.map((v) => v.monto));
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
       <header>
-        <h1 className="font-display text-3xl font-semibold text-text">Resumen del día</h1>
+        <h1 className="font-display text-2xl font-semibold text-text sm:text-3xl">Resumen del día</h1>
         <p className="text-sm text-text-muted">
           {new Date().toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
       </header>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Ventas de hoy"
           value={formatCurrency(kpis.ventasHoy)}
@@ -47,9 +47,9 @@ export function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Ventas por hora */}
-        <Card className="p-4 lg:col-span-2">
+        <Card className="p-3 sm:p-4 lg:col-span-2">
           <h2 className="font-display text-lg font-semibold text-text">Ventas por hora</h2>
-          <div className="mt-4 flex h-48 items-end gap-2">
+          <div className="mt-4 flex h-40 items-end gap-1 sm:h-48 sm:gap-2">
             {ventasPorHora.map((v) => (
               <div key={v.hora} className="flex flex-1 flex-col items-center gap-1">
                 <div
@@ -64,7 +64,7 @@ export function DashboardPage() {
         </Card>
 
         {/* Alertas de stock */}
-        <Card className="p-4">
+        <Card className="p-3 sm:p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-lg font-semibold text-text">Alertas de stock</h2>
             <Badge tone="danger">{alertasStock.filter((a) => a.nivel === 'critico').length} críticas</Badge>
