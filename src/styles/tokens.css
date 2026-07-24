@@ -85,6 +85,10 @@
 }
 
 [data-theme='dark'] {
-  --color-surface: #1c1512;
-  --color-surface-alt: #251b16;
-  --color-surface-sunk:
+  --color-surface: #211814;
+  --color-surface-alt: #2b1f1a;
+  --color-surface-sunk: #382822;
+  --color-border: #4a352d;
+  --color-text: #fbf1ec;
+  --color-text-muted: #bda69c;
+}

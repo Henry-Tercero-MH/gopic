@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   ReceiptText,
@@ -9,16 +9,17 @@ import {
   BookOpen,
   BarChart3,
   Settings,
-  Coffee,
+  Bird,
   Sun,
   Moon,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface NavItem {
   to: string;
   label: string;
-  icon: ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   soon?: boolean;
 }
 
@@ -45,12 +46,12 @@ export function AppShell() {
       {/* Sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
         <div className="flex h-16 items-center gap-2 px-4">
-          <span className="grid h-9 w-9 place-items-center rounded-md bg-brand-500 text-text-invert">
-            <Coffee size={20} />
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-500 text-text-invert">
+            <Bird size={20} />
           </span>
           <div className="leading-tight">
-            <div className="font-display text-lg font-semibold text-brand-700">Café Aurora</div>
-            <div className="text-xs text-text-muted">Punto de venta</div>
+            <div className="font-display text-lg font-semibold text-brand-700">GOPIC</div>
+            <div className="text-xs text-text-muted">Preparaciones con sabor</div>
           </div>
         </div>
 
@@ -97,7 +98,7 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-4">
           <div className="flex items-center gap-3">
-            <Coffee size={20} className="text-brand-500 md:hidden" />
+            <Bird size={20} className="text-brand-500 md:hidden" />
             <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-xs font-semibold text-success">
               <span className="h-2 w-2 rounded-full bg-success" /> Caja abierta · fondo Q500
             </span>

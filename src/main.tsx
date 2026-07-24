@@ -6,7 +6,10 @@ import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { PosPage } from '@/features/pos/PosPage';
 import { MesasPage } from '@/features/mesas/MesasPage';
 import { KdsPage } from '@/features/kds/KdsPage';
-import { PlaceholderPage } from '@/features/placeholder/PlaceholderPage';
+import { InventarioPage } from '@/features/inventario/InventarioPage';
+import { RecetarioPage } from '@/features/recetario/RecetarioPage';
+import { ReportesPage } from '@/features/reportes/ReportesPage';
+import { ConfigPage } from '@/features/config/ConfigPage';
 import '@/styles/globals.css';
 
 const router = createBrowserRouter([
@@ -18,10 +21,10 @@ const router = createBrowserRouter([
       { path: 'pos', element: <PosPage /> },
       { path: 'mesas', element: <MesasPage /> },
       { path: 'kds', element: <KdsPage /> },
-      { path: 'inventario', element: <PlaceholderPage titulo="Inventario" /> },
-      { path: 'recetario', element: <PlaceholderPage titulo="Recetario" /> },
-      { path: 'reportes', element: <PlaceholderPage titulo="Reportes" /> },
-      { path: 'config', element: <PlaceholderPage titulo="Configuración" /> },
+      { path: 'inventario', element: <InventarioPage /> },
+      { path: 'recetario', element: <RecetarioPage /> },
+      { path: 'reportes', element: <ReportesPage /> },
+      { path: 'config', element: <ConfigPage /> },
     ],
   },
 ]);

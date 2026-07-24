@@ -1,3 +1,4 @@
+import { Users } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
@@ -60,7 +61,9 @@ function MesaCard({ mesa }: { mesa: Mesa }) {
         <span className="font-display text-lg font-semibold text-text">{mesa.nombre}</span>
         <Badge tone={cfg.tone}>{cfg.label}</Badge>
       </div>
-      <span className="mt-1 text-xs text-text-muted">👥 {mesa.capacidad} personas</span>
+      <span className="mt-1 inline-flex items-center gap-1 text-xs text-text-muted">
+        <Users size={13} /> {mesa.capacidad} personas
+      </span>
 
       {mesa.estado === 'libre' ? (
         <span className="mt-4 text-sm text-text-muted">Toca para abrir cuenta</span>

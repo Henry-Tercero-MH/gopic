@@ -1,3 +1,4 @@
+import { Wallet, Receipt, Repeat, Utensils } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
@@ -23,15 +24,23 @@ export function DashboardPage() {
         <StatCard
           label="Ventas de hoy"
           value={formatCurrency(kpis.ventasHoy)}
-          icon="💰"
+          icon={Wallet}
+          iconTone="action"
           trend={{ value: `${deltaPct}% vs. ayer`, positive: delta >= 0 }}
         />
-        <StatCard label="Ticket promedio" value={formatCurrency(kpis.ticketPromedio)} icon="🧾" hint="por venta" />
-        <StatCard label="Transacciones" value={String(kpis.transacciones)} icon="🔁" hint="cobros cerrados" />
+        <StatCard label="Ticket promedio" value={formatCurrency(kpis.ticketPromedio)} icon={Receipt} hint="por venta" />
+        <StatCard
+          label="Transacciones"
+          value={String(kpis.transacciones)}
+          icon={Repeat}
+          iconTone="info"
+          hint="cobros cerrados"
+        />
         <StatCard
           label="Mesas ocupadas"
           value={`${kpis.mesasOcupadas}/${kpis.mesasTotales}`}
-          icon="🍽️"
+          icon={Utensils}
+          iconTone="accent"
           hint={`${Math.round((kpis.mesasOcupadas / kpis.mesasTotales) * 100)}% de ocupación`}
         />
       </div>

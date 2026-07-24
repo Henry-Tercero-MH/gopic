@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { Search, Plus, Minus, LayoutGrid, ReceiptText, CreditCard, Percent, Trash2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
@@ -62,9 +63,10 @@ export function PosPage() {
         {/* Buscador + categorías */}
         <div className="space-y-3 border-b border-border bg-surface p-4">
           <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-              🔍
-            </span>
+            <Search
+              size={18}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+            />
             <input
               ref={buscadorRef}
               value={busqueda}
@@ -75,7 +77,7 @@ export function PosPage() {
           </div>
 
           <div className="flex gap-2 overflow-x-auto scroll-thin pb-1">
-            <CatChip label="Todos" emoji="🗂️" active={catActiva === 'all'} onClick={() => setCatActiva('all')} />
+            <CatChip label="Todos" emoji="" icon={LayoutGrid} active={catActiva === 'all'} onClick={() => setCatActiva('all')} />
             {categorias.map((c) => (
               <CatChip
                 key={c.id}
@@ -93,7 +95,7 @@ export function PosPage() {
           {visibles.length === 0 ? (
             <div className="grid h-full place-items-center text-center">
               <div>
-                <div className="text-4xl" aria-hidden>🔍</div>
+                <Search size={40} className="mx-auto text-text-muted" />
                 <p className="mt-2 font-medium text-text">Sin resultados para “{busqueda}”</p>
                 <p className="text-sm text-text-muted">Prueba con otro término o cambia de categoría.</p>
               </div>
@@ -136,7 +138,7 @@ export function PosPage() {
           {lineas.length === 0 ? (
             <div className="grid h-full place-items-center p-6 text-center">
               <div>
-                <div className="text-4xl" aria-hidden>🧾</div>
+                <ReceiptText size={40} className="mx-auto text-text-muted" />
                 <p className="mt-2 font-medium text-text">Ticket vacío</p>
                 <p className="text-sm text-text-muted">Toca un producto para agregarlo.</p>
               </div>
@@ -151,9 +153,9 @@ export function PosPage() {
                     <div className="num text-xs text-text-muted">{formatCurrency(l.producto.precio)} c/u</div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <StepBtn label="−" onClick={() => cambiarCantidad(l.producto.id, -1)} />
+                    <StepBtn dir="down" onClick={() => cambiarCantidad(l.producto.id, -1)} />
                     <span className="num w-6 text-center text-sm font-semibold text-text">{l.cantidad}</span>
-                    <StepBtn label="+" onClick={() => cambiarCantidad(l.producto.id, 1)} />
+                    <StepBtn dir="up" onClick={() => cambiarCantidad(l.producto.id, 1)} />
                   </div>
                   <span className="num w-16 text-right text-sm font-semibold text-text">
                     {formatCurrency(l.producto.precio * l.cantidad)}
@@ -183,14 +185,14 @@ export function PosPage() {
 
           <div className="mt-4 grid grid-cols-2 gap-2">
             <Button variant="secondary" size="lg" disabled={lineas.length === 0}>
-              Descuento
+              <Percent size={18} /> Descuento
             </Button>
             <Button variant="secondary" size="lg" onClick={() => setLineas([])} disabled={lineas.length === 0}>
-              Cancelar
+              <Trash2 size={18} /> Cancelar
             </Button>
           </div>
           <Button size="lg" className="mt-2 w-full" disabled={lineas.length === 0}>
-            Cobrar · {formatCurrency(total)}
+            <CreditCard size={20} /> Cobrar · {formatCurrency(total)}
           </Button>
         </div>
       </aside>
@@ -201,11 +203,13 @@ export function PosPage() {
 function CatChip({
   label,
   emoji,
+  icon: Icon,
   active,
   onClick,
 }: {
   label: string;
   emoji: string;
+  icon?: LucideIcon;
   active: boolean;
   onClick: () => void;
 }) {
@@ -219,20 +223,20 @@ function CatChip({
           : 'border-border bg-surface text-text-muted hover:bg-surface-sunk',
       )}
     >
-      <span aria-hidden>{emoji}</span>
+      {Icon ? <Icon size={15} /> : <span aria-hidden>{emoji}</span>}
       {label}
     </button>
   );
 }
 
-function StepBtn({ label, onClick }: { label: string; onClick: () => void }) {
+function StepBtn({ dir, onClick }: { dir: 'up' | 'down'; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       className="grid h-7 w-7 place-items-center rounded-md border border-border bg-surface text-text hover:bg-surface-sunk"
-      aria-label={label === '+' ? 'Aumentar' : 'Disminuir'}
+      aria-label={dir === 'up' ? 'Aumentar' : 'Disminuir'}
     >
-      {label}
+      {dir === 'up' ? <Plus size={14} /> : <Minus size={14} />}
     </button>
   );
 }
