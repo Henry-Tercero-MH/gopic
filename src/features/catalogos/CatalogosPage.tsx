@@ -3,13 +3,14 @@ import { Plus, Pencil, Trash2, X, Check, Package, Tags, Boxes, Truck, Ruler, typ
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useToast } from '@/lib/toast';
+import { useOperacion } from '@/lib/operacion';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
 import {
-  productos as productosSeed,
-  categorias as categoriasSeed,
-  insumos as insumosSeed,
   type Producto,
   type Categoria,
   type Insumo,
@@ -76,14 +77,22 @@ const PESTANAS: { id: Pestana; label: string; icon: LucideIcon }[] = [
 
 export function CatalogosPage() {
   const [pestana, setPestana] = useState<Pestana>('productos');
-  const [productos, setProductos] = useState<Producto[]>(() => productosSeed.map((p) => ({ ...p })));
-  const [categorias, setCategorias] = useState<Categoria[]>(() => categoriasSeed.map((c) => ({ ...c })));
+  // Productos, categorías e insumos viven en el store: se comparten con POS e Inventario.
+  const op = useOperacion();
+  const { productos, categorias, insumos } = op;
+  // Adaptadores para soportar la forma funcional setX(prev => next) sobre el store.
+  const setProductos: React.Dispatch<React.SetStateAction<Producto[]>> = (v) =>
+    op.setProductos(typeof v === 'function' ? (v as (p: Producto[]) => Producto[])(productos) : v);
+  const setCategorias: React.Dispatch<React.SetStateAction<Categoria[]>> = (v) =>
+    op.setCategorias(typeof v === 'function' ? (v as (c: Categoria[]) => Categoria[])(categorias) : v);
+  const setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>> = (v) =>
+    op.setInsumos(typeof v === 'function' ? (v as (i: Insumo[]) => Insumo[])(insumos) : v);
+  // Medidas y proveedores solo se usan aquí, quedan como estado local.
   const [medidas, setMedidas] = useState<Medida[]>(() => MEDIDAS_SEED.map((m) => ({ ...m })));
-  const [insumos, setInsumos] = useState<Insumo[]>(() => insumosSeed.map((i) => ({ ...i })));
   const [proveedores, setProveedores] = useState<Proveedor[]>(() => PROVEEDORES_SEED.map((p) => ({ ...p })));
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader title="Catálogos" subtitle="Administra los datos maestros del sistema" />
 
       <div className="flex gap-1 overflow-x-auto border-b border-border scroll-thin">
@@ -166,6 +175,8 @@ function ProductosCat({
           { header: 'Popular', render: (p: Producto) => (p.destacado ? <Badge tone="accent">Popular</Badge> : <span className="text-text-muted">—</span>) },
         ]}
         filas={productos}
+        entidad="producto"
+        describir={(p) => p.nombre}
         onEditar={abrirEditar}
         onEliminar={(p) => setProductos((prev) => prev.filter((x) => x.id !== p.id))}
       />
@@ -276,6 +287,8 @@ function CategoriasCat({
           { header: 'Productos', render: (c: Categoria) => <span className="num text-text-muted">{cuenta(c.id)}</span> },
         ]}
         filas={categorias}
+        entidad="categoría"
+        describir={(c) => c.nombre}
         onEditar={(c) => { setEditando(c); setAbierto(true); }}
         onEliminar={(c) => setCategorias((prev) => prev.filter((x) => x.id !== c.id))}
       />
@@ -355,6 +368,8 @@ function MedidasCat({
           { header: 'Insumos', render: (m: Medida) => <span className="num text-text-muted">{enUso(m.abreviatura)}</span> },
         ]}
         filas={medidas}
+        entidad="unidad"
+        describir={(m) => m.nombre}
         onEditar={(m) => { setEditando(m); setAbierto(true); }}
         onEliminar={(m) => setMedidas((prev) => prev.filter((x) => x.id !== m.id))}
       />
@@ -445,6 +460,8 @@ function InsumosCat({
           { header: 'Nivel', render: (i: Insumo) => <Badge tone={nivelBadge[i.nivel].tone}>{nivelBadge[i.nivel].label}</Badge> },
         ]}
         filas={insumos}
+        entidad="insumo"
+        describir={(i) => i.nombre}
         onEditar={(i) => { setEditando(i); setAbierto(true); }}
         onEliminar={(i) => setInsumos((prev) => prev.filter((x) => x.id !== i.id))}
       />
@@ -555,6 +572,8 @@ function ProveedoresCat({
           { header: 'Correo', render: (p: Proveedor) => <span className="text-text-muted">{p.email}</span> },
         ]}
         filas={proveedores}
+        entidad="proveedor"
+        describir={(p) => p.nombre}
         onEditar={(p) => { setEditando(p); setAbierto(true); }}
         onEliminar={(p) => setProveedores((prev) => prev.filter((x) => x.id !== p.id))}
       />
@@ -650,14 +669,36 @@ interface Columna<T> {
 function Tabla<T extends { id: string }>({
   columnas,
   filas,
+  entidad,
+  describir,
   onEditar,
   onEliminar,
 }: {
   columnas: Columna<T>[];
   filas: T[];
+  /** Nombre singular de la entidad para los mensajes de confirmación (p. ej. "producto"). */
+  entidad: string;
+  /** Texto que identifica la fila en el diálogo (p. ej. su nombre). */
+  describir: (row: T) => string;
   onEditar: (row: T) => void;
   onEliminar: (row: T) => void;
 }) {
+  const confirm = useConfirm();
+  const toast = useToast();
+
+  async function pedirEliminar(row: T) {
+    const nombre = describir(row);
+    const ok = await confirm({
+      titulo: `Eliminar ${entidad}`,
+      mensaje: `¿Eliminar "${nombre}"? Esta acción no se puede deshacer.`,
+      confirmar: 'Eliminar',
+      peligro: true,
+    });
+    if (!ok) return;
+    onEliminar(row);
+    toast.info(`${entidad[0].toUpperCase()}${entidad.slice(1)} "${nombre}" eliminado.`);
+  }
+
   if (filas.length === 0) {
     return <p className="p-8 text-center text-sm text-text-muted">Sin registros. Agrega el primero con “Nuevo”.</p>;
   }
@@ -688,7 +729,7 @@ function Tabla<T extends { id: string }>({
                     <Pencil size={16} />
                   </button>
                   <button
-                    onClick={() => onEliminar(row)}
+                    onClick={() => pedirEliminar(row)}
                     aria-label="Eliminar"
                     className="grid h-8 w-8 place-items-center rounded-md border border-border text-danger hover:bg-danger/10"
                   >
@@ -715,27 +756,19 @@ function Campo({ label, children }: { label: string; children: ReactNode }) {
 
 function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-modal grid place-items-center bg-text/40 p-4" onClick={onCerrar}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={titulo}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-xl bg-surface shadow-modal"
-      >
-        <header className="flex items-center justify-between border-b border-border p-4">
-          <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
-          <button
-            onClick={onCerrar}
-            aria-label="Cerrar"
-            className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk"
-          >
-            <X size={18} />
-          </button>
-        </header>
-        {children}
-      </div>
-    </div>
+    <Modal onClose={onCerrar} ariaLabel={titulo} className="w-full max-w-lg">
+      <header className="flex items-center justify-between border-b border-border p-4">
+        <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
+        <button
+          onClick={onCerrar}
+          aria-label="Cerrar"
+          className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk"
+        >
+          <X size={18} />
+        </button>
+      </header>
+      {children}
+    </Modal>
   );
 }
 

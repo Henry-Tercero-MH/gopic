@@ -16,6 +16,7 @@ import {
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cn } from '@/lib/cn';
 
@@ -153,7 +154,7 @@ export function ConfigPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>(USUARIOS_INICIALES);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Configuración"
         subtitle="Negocio, impresión y control de accesos"
@@ -584,27 +585,19 @@ function ModalShell({
   children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-modal grid place-items-center bg-text/40 p-4" onClick={onCerrar}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={titulo}
-        onClick={(e) => e.stopPropagation()}
-        className={cn('w-full overflow-hidden rounded-xl bg-surface shadow-modal', ancho)}
-      >
-        <header className="flex items-center justify-between border-b border-border p-4">
-          <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
-          <button
-            onClick={onCerrar}
-            aria-label="Cerrar"
-            className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk"
-          >
-            <X size={18} />
-          </button>
-        </header>
-        {children}
-      </div>
-    </div>
+    <Modal onClose={onCerrar} ariaLabel={titulo} className={cn('w-full', ancho)}>
+      <header className="flex items-center justify-between border-b border-border p-4">
+        <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
+        <button
+          onClick={onCerrar}
+          aria-label="Cerrar"
+          className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk"
+        >
+          <X size={18} />
+        </button>
+      </header>
+      {children}
+    </Modal>
   );
 }
 

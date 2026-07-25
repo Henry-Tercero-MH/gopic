@@ -19,7 +19,82 @@ export interface Producto {
   /** Foto del producto. Placeholder de Unsplash mientras no haya fotos reales. */
   imagen?: string;
   destacado?: boolean;
+  /** Ids de grupos de modificadores aplicables (ver `gruposModificadores`). */
+  modificadores?: string[];
 }
+
+/* ---- Modificadores de producto ---- */
+export interface OpcionModificador {
+  id: string;
+  nombre: string;
+  /** Ajuste al precio del producto (0 = sin costo, positivo = extra). */
+  precio: number;
+}
+
+export interface GrupoModificador {
+  id: string;
+  nombre: string;
+  /** true = obligatorio elegir una opción; false = opcional. */
+  requerido: boolean;
+  /** true = varias opciones (extras); false = una sola (tamaño). */
+  multiple: boolean;
+  opciones: OpcionModificador[];
+}
+
+export const gruposModificadores: GrupoModificador[] = [
+  {
+    id: 'mod-tamano', nombre: 'Tamaño', requerido: true, multiple: false,
+    opciones: [
+      { id: 'tam-ch', nombre: 'Chico', precio: 0 },
+      { id: 'tam-md', nombre: 'Mediano', precio: 5 },
+      { id: 'tam-gd', nombre: 'Grande', precio: 9 },
+    ],
+  },
+  {
+    id: 'mod-leche', nombre: 'Tipo de leche', requerido: true, multiple: false,
+    opciones: [
+      { id: 'leche-entera', nombre: 'Entera', precio: 0 },
+      { id: 'leche-deslac', nombre: 'Deslactosada', precio: 3 },
+      { id: 'leche-almendra', nombre: 'De almendra', precio: 6 },
+      { id: 'leche-avena', nombre: 'De avena', precio: 6 },
+    ],
+  },
+  {
+    id: 'mod-extras', nombre: 'Extras', requerido: false, multiple: true,
+    opciones: [
+      { id: 'ex-shot', nombre: 'Shot extra de espresso', precio: 6 },
+      { id: 'ex-vainilla', nombre: 'Jarabe de vainilla', precio: 4 },
+      { id: 'ex-caramelo', nombre: 'Jarabe de caramelo', precio: 4 },
+      { id: 'ex-crema', nombre: 'Crema batida', precio: 5 },
+    ],
+  },
+  {
+    id: 'mod-termino', nombre: 'Término', requerido: true, multiple: false,
+    opciones: [
+      { id: 'term-13', nombre: 'Término medio', precio: 0 },
+      { id: 'term-34', nombre: 'Tres cuartos', precio: 0 },
+      { id: 'term-bien', nombre: 'Bien cocido', precio: 0 },
+    ],
+  },
+  {
+    id: 'mod-extras-comida', nombre: 'Extras', requerido: false, multiple: true,
+    opciones: [
+      { id: 'exc-queso', nombre: 'Queso extra', precio: 6 },
+      { id: 'exc-tocino', nombre: 'Tocino', precio: 8 },
+      { id: 'exc-jalapeno', nombre: 'Jalapeños', precio: 3 },
+      { id: 'exc-aguacate', nombre: 'Aguacate', precio: 7 },
+    ],
+  },
+  {
+    id: 'mod-sin', nombre: 'Sin ingredientes', requerido: false, multiple: true,
+    opciones: [
+      { id: 'sin-cebolla', nombre: 'Sin cebolla', precio: 0 },
+      { id: 'sin-tomate', nombre: 'Sin tomate', precio: 0 },
+      { id: 'sin-lechuga', nombre: 'Sin lechuga', precio: 0 },
+      { id: 'sin-salsa', nombre: 'Sin salsa', precio: 0 },
+    ],
+  },
+];
 
 /** Arma una URL de Unsplash optimizada para las tarjetas del POS (placeholder). */
 const img = (id: string) => `https://images.unsplash.com/${id}?w=400&q=60&fit=crop`;
@@ -33,9 +108,9 @@ export const categorias: Categoria[] = [
 
 export const productos: Producto[] = [
   /* ---- Hamburguesas ---- */
-  { id: 'p-hamburguesa', categoriaId: 'cat-burgers', nombre: 'Hamburguesa clásica', precio: 38, emoji: '🍔', imagen: img('photo-1568901346375-23c9450c58cd'), destacado: true },
-  { id: 'p-cheeseburger', categoriaId: 'cat-burgers', nombre: 'Cheeseburger', precio: 42, emoji: '🍔', imagen: img('photo-1571091718767-18b5b1457add') },
-  { id: 'p-doble', categoriaId: 'cat-burgers', nombre: 'Doble carne', precio: 55, emoji: '🍔', imagen: img('photo-1586190848861-99aa4a171e90'), destacado: true },
+  { id: 'p-hamburguesa', categoriaId: 'cat-burgers', nombre: 'Hamburguesa clásica', precio: 38, emoji: '🍔', imagen: img('photo-1568901346375-23c9450c58cd'), destacado: true, modificadores: ['mod-termino', 'mod-extras-comida', 'mod-sin'] },
+  { id: 'p-cheeseburger', categoriaId: 'cat-burgers', nombre: 'Cheeseburger', precio: 42, emoji: '🍔', imagen: img('photo-1571091718767-18b5b1457add'), modificadores: ['mod-termino', 'mod-extras-comida', 'mod-sin'] },
+  { id: 'p-doble', categoriaId: 'cat-burgers', nombre: 'Doble carne', precio: 55, emoji: '🍔', imagen: img('photo-1586190848861-99aa4a171e90'), destacado: true, modificadores: ['mod-termino', 'mod-extras-comida', 'mod-sin'] },
   { id: 'p-bacon', categoriaId: 'cat-burgers', nombre: 'Burger con tocino', precio: 52, emoji: '🥓', imagen: img('photo-1594007654729-407eedc4be65') },
   { id: 'p-combo-burger', categoriaId: 'cat-burgers', nombre: 'Combo burger + papas', precio: 65, emoji: '🍔', imagen: img('photo-1550547660-d9450f859349'), destacado: true },
 
@@ -55,7 +130,7 @@ export const productos: Producto[] = [
   { id: 'p-pollo-frito', categoriaId: 'cat-antojitos', nombre: 'Pollo frito', precio: 50, emoji: '🍗', imagen: img('photo-1562967914-608f82629710') },
 
   /* ---- Fríos ---- */
-  { id: 'p-malteada', categoriaId: 'cat-frios', nombre: 'Malteada', precio: 30, emoji: '🥤', imagen: img('photo-1585238342024-78d387f4a707'), destacado: true },
+  { id: 'p-malteada', categoriaId: 'cat-frios', nombre: 'Malteada', precio: 30, emoji: '🥤', imagen: img('photo-1585238342024-78d387f4a707'), destacado: true, modificadores: ['mod-tamano'] },
   { id: 'p-refresco', categoriaId: 'cat-frios', nombre: 'Refresco', precio: 15, emoji: '🥤', imagen: img('photo-1600271886742-f049cd451bba') },
 ];
 
@@ -257,18 +332,18 @@ export const kpis = {
 };
 
 export const topProductos = [
-  { nombre: 'Latte', unidades: 48, ingreso: 1152 },
-  { nombre: 'Capuchino', unidades: 39, ingreso: 858 },
-  { nombre: 'Frappé de café', unidades: 27, ingreso: 864 },
-  { nombre: 'Croissant', unidades: 33, ingreso: 594 },
-  { nombre: 'Cheesecake', unidades: 18, ingreso: 630 },
+  { nombre: 'Hamburguesa clásica', unidades: 42, ingreso: 1596 },
+  { nombre: 'Papas fritas', unidades: 58, ingreso: 1276 },
+  { nombre: 'Alitas BBQ', unidades: 31, ingreso: 1488 },
+  { nombre: 'Salchipapas', unidades: 27, ingreso: 945 },
+  { nombre: 'Malteada', unidades: 24, ingreso: 720 },
 ];
 
 export const alertasStock = [
-  { insumo: 'Leche entera', restante: '4 L', minimo: '10 L', nivel: 'critico' as const },
-  { insumo: 'Granos arábica', restante: '2.1 kg', minimo: '5 kg', nivel: 'critico' as const },
+  { insumo: 'Carne de res (molida)', restante: '3 kg', minimo: '8 kg', nivel: 'critico' as const },
+  { insumo: 'Papa', restante: '6 kg', minimo: '15 kg', nivel: 'critico' as const },
+  { insumo: 'Pan de hamburguesa', restante: '40 pz', minimo: '100 pz', nivel: 'bajo' as const },
   { insumo: 'Vasos 16 oz', restante: '85 pz', minimo: '150 pz', nivel: 'bajo' as const },
-  { insumo: 'Jarabe de vainilla', restante: '1 bot', minimo: '3 bot', nivel: 'bajo' as const },
 ];
 
 /* Serie de ventas por hora para el mini-gráfico del dashboard */
@@ -293,16 +368,16 @@ export interface Insumo {
 }
 
 export const insumos: Insumo[] = [
-  { id: 'i-1', nombre: 'Granos arábica', categoria: 'Café', existencia: 2.1, unidad: 'kg', minimo: 5, costoUnitario: 95, nivel: 'critico' },
-  { id: 'i-2', nombre: 'Leche entera', categoria: 'Lácteos', existencia: 4, unidad: 'L', minimo: 10, costoUnitario: 8.5, nivel: 'critico' },
-  { id: 'i-3', nombre: 'Leche deslactosada', categoria: 'Lácteos', existencia: 12, unidad: 'L', minimo: 6, costoUnitario: 11, nivel: 'ok' },
-  { id: 'i-4', nombre: 'Jarabe de vainilla', categoria: 'Jarabes', existencia: 1, unidad: 'bot', minimo: 3, costoUnitario: 42, nivel: 'bajo' },
-  { id: 'i-5', nombre: 'Jarabe de caramelo', categoria: 'Jarabes', existencia: 5, unidad: 'bot', minimo: 3, costoUnitario: 42, nivel: 'ok' },
+  { id: 'i-1', nombre: 'Carne de res (molida)', categoria: 'Cárnicos', existencia: 3, unidad: 'kg', minimo: 8, costoUnitario: 62, nivel: 'critico' },
+  { id: 'i-2', nombre: 'Papa', categoria: 'Verduras', existencia: 6, unidad: 'kg', minimo: 15, costoUnitario: 7, nivel: 'critico' },
+  { id: 'i-3', nombre: 'Pan de hamburguesa', categoria: 'Panadería', existencia: 40, unidad: 'pz', minimo: 100, costoUnitario: 2.5, nivel: 'bajo' },
+  { id: 'i-4', nombre: 'Queso amarillo', categoria: 'Lácteos', existencia: 4.5, unidad: 'kg', minimo: 3, costoUnitario: 55, nivel: 'ok' },
+  { id: 'i-5', nombre: 'Alitas de pollo', categoria: 'Cárnicos', existencia: 9, unidad: 'kg', minimo: 5, costoUnitario: 38, nivel: 'ok' },
   { id: 'i-6', nombre: 'Vasos 16 oz', categoria: 'Desechables', existencia: 85, unidad: 'pz', minimo: 150, costoUnitario: 0.9, nivel: 'bajo' },
-  { id: 'i-7', nombre: 'Harina', categoria: 'Panadería', existencia: 22, unidad: 'kg', minimo: 8, costoUnitario: 7.2, nivel: 'ok' },
-  { id: 'i-8', nombre: 'Mantequilla', categoria: 'Panadería', existencia: 6.5, unidad: 'kg', minimo: 4, costoUnitario: 58, nivel: 'ok' },
-  { id: 'i-9', nombre: 'Azúcar', categoria: 'Abarrotes', existencia: 14, unidad: 'kg', minimo: 5, costoUnitario: 6.5, nivel: 'ok' },
-  { id: 'i-10', nombre: 'Chocolate en polvo', categoria: 'Abarrotes', existencia: 3.2, unidad: 'kg', minimo: 2, costoUnitario: 48, nivel: 'ok' },
+  { id: 'i-7', nombre: 'Salchicha', categoria: 'Cárnicos', existencia: 7, unidad: 'kg', minimo: 4, costoUnitario: 34, nivel: 'ok' },
+  { id: 'i-8', nombre: 'Aceite para freír', categoria: 'Abarrotes', existencia: 18, unidad: 'L', minimo: 8, costoUnitario: 22, nivel: 'ok' },
+  { id: 'i-9', nombre: 'Salsa BBQ', categoria: 'Salsas', existencia: 6, unidad: 'L', minimo: 3, costoUnitario: 28, nivel: 'ok' },
+  { id: 'i-10', nombre: 'Helado de vainilla', categoria: 'Lácteos', existencia: 5, unidad: 'L', minimo: 3, costoUnitario: 30, nivel: 'ok' },
 ];
 
 export interface MovimientoKardex {
@@ -322,24 +397,6 @@ export const kardexEjemplo: MovimientoKardex[] = [
 ];
 
 /* ---- Recetario ---- */
-export interface RecetaResumen {
-  id: string;
-  producto: string;
-  emoji: string;
-  precioVenta: number;
-  costo: number;
-  insumos: number;
-}
-
-export const recetas: RecetaResumen[] = [
-  { id: 'r-1', producto: 'Latte', emoji: '☕', precioVenta: 24, costo: 6.4, insumos: 3 },
-  { id: 'r-2', producto: 'Capuchino', emoji: '☕', precioVenta: 22, costo: 5.9, insumos: 3 },
-  { id: 'r-3', producto: 'Frappé de café', emoji: '🥤', precioVenta: 32, costo: 10.2, insumos: 5 },
-  { id: 'r-4', producto: 'Mocha', emoji: '☕', precioVenta: 27, costo: 8.1, insumos: 4 },
-  { id: 'r-5', producto: 'Croissant', emoji: '🥐', precioVenta: 18, costo: 4.3, insumos: 4 },
-  { id: 'r-6', producto: 'Cheesecake', emoji: '🍰', precioVenta: 35, costo: 12.8, insumos: 6 },
-];
-
 export interface RecetaDetalleItem {
   insumo: string;
   cantidad: string;
@@ -347,10 +404,67 @@ export interface RecetaDetalleItem {
   costo: number;
 }
 
-export const recetaLatte: RecetaDetalleItem[] = [
-  { insumo: 'Base de espresso (sub-receta)', cantidad: '30 ml', merma: '0%', costo: 2.9 },
-  { insumo: 'Leche entera', cantidad: '180 ml', merma: '2%', costo: 1.6 },
-  { insumo: 'Vaso 16 oz', cantidad: '1 pz', merma: '0%', costo: 0.9 },
+export interface RecetaResumen {
+  id: string;
+  producto: string;
+  emoji: string;
+  precioVenta: number;
+  costo: number;
+  /** Ingredientes de la receta; su longitud es el número de insumos. */
+  detalle: RecetaDetalleItem[];
+}
+
+export const recetas: RecetaResumen[] = [
+  {
+    id: 'r-1', producto: 'Hamburguesa clásica', emoji: '🍔', precioVenta: 38, costo: 12.4,
+    detalle: [
+      { insumo: 'Carne de res (molida)', cantidad: '150 g', merma: '5%', costo: 9.3 },
+      { insumo: 'Pan de hamburguesa', cantidad: '1 pz', merma: '0%', costo: 2.5 },
+      { insumo: 'Lechuga y tomate', cantidad: '40 g', merma: '3%', costo: 0.6 },
+    ],
+  },
+  {
+    id: 'r-2', producto: 'Cheeseburger', emoji: '🍔', precioVenta: 42, costo: 15.9,
+    detalle: [
+      { insumo: 'Carne de res (molida)', cantidad: '150 g', merma: '5%', costo: 9.3 },
+      { insumo: 'Pan de hamburguesa', cantidad: '1 pz', merma: '0%', costo: 2.5 },
+      { insumo: 'Queso amarillo', cantidad: '60 g', merma: '0%', costo: 3.3 },
+      { insumo: 'Lechuga y tomate', cantidad: '40 g', merma: '3%', costo: 0.8 },
+    ],
+  },
+  {
+    id: 'r-3', producto: 'Papas fritas', emoji: '🍟', precioVenta: 22, costo: 4.6,
+    detalle: [
+      { insumo: 'Papa', cantidad: '250 g', merma: '8%', costo: 1.9 },
+      { insumo: 'Aceite para freír', cantidad: '50 ml', merma: '10%', costo: 1.2 },
+      { insumo: 'Sal y empaque', cantidad: '1 porción', merma: '0%', costo: 1.5 },
+    ],
+  },
+  {
+    id: 'r-4', producto: 'Alitas BBQ', emoji: '🍗', precioVenta: 48, costo: 16.2,
+    detalle: [
+      { insumo: 'Alitas de pollo', cantidad: '350 g', merma: '6%', costo: 13.3 },
+      { insumo: 'Salsa BBQ', cantidad: '60 ml', merma: '2%', costo: 1.7 },
+      { insumo: 'Aceite para freír', cantidad: '50 ml', merma: '10%', costo: 1.2 },
+    ],
+  },
+  {
+    id: 'r-5', producto: 'Salchipapas', emoji: '🌭', precioVenta: 35, costo: 9.8,
+    detalle: [
+      { insumo: 'Papa', cantidad: '200 g', merma: '8%', costo: 1.5 },
+      { insumo: 'Salchicha', cantidad: '120 g', merma: '3%', costo: 4.1 },
+      { insumo: 'Queso amarillo', cantidad: '40 g', merma: '0%', costo: 2.2 },
+      { insumo: 'Aceite para freír', cantidad: '50 ml', merma: '10%', costo: 2.0 },
+    ],
+  },
+  {
+    id: 'r-6', producto: 'Malteada', emoji: '🥤', precioVenta: 30, costo: 7.9,
+    detalle: [
+      { insumo: 'Helado de vainilla', cantidad: '200 ml', merma: '0%', costo: 6.0 },
+      { insumo: 'Leche', cantidad: '100 ml', merma: '0%', costo: 1.0 },
+      { insumo: 'Vaso 16 oz', cantidad: '1 pz', merma: '0%', costo: 0.9 },
+    ],
+  },
 ];
 
 /* ---- Reportes ---- */
@@ -361,17 +475,159 @@ export const ventasPorDia = [
 ];
 
 export const ventasPorCategoria = [
-  { categoria: 'Café', monto: 12400, pct: 38 },
-  { categoria: 'Fríos', monto: 8200, pct: 25 },
-  { categoria: 'Panadería', monto: 5600, pct: 17 },
-  { categoria: 'Postres', monto: 4100, pct: 13 },
-  { categoria: 'Salados', monto: 2300, pct: 7 },
+  { categoria: 'Hamburguesas', monto: 13600, pct: 38 },
+  { categoria: 'Papas y fritos', monto: 8900, pct: 25 },
+  { categoria: 'Antojitos', monto: 6100, pct: 17 },
+  { categoria: 'Fríos', monto: 4600, pct: 13 },
+  { categoria: 'Otros', monto: 2500, pct: 7 },
 ];
 
 export const rentabilidadProductos = [
-  { producto: 'Latte', vendidos: 312, ingreso: 7488, costo: 1997, margen: 73 },
-  { producto: 'Capuchino', vendidos: 268, ingreso: 5896, costo: 1581, margen: 73 },
-  { producto: 'Frappé de café', vendidos: 154, ingreso: 4928, costo: 1571, margen: 68 },
-  { producto: 'Cheesecake', vendidos: 96, ingreso: 3360, costo: 1229, margen: 63 },
-  { producto: 'Croissant', vendidos: 210, ingreso: 3780, costo: 903, margen: 76 },
+  { producto: 'Hamburguesa clásica', vendidos: 312, ingreso: 11856, costo: 3869, margen: 67 },
+  { producto: 'Papas fritas', vendidos: 428, ingreso: 9416, costo: 1968, margen: 79 },
+  { producto: 'Alitas BBQ', vendidos: 168, ingreso: 8064, costo: 2722, margen: 66 },
+  { producto: 'Salchipapas', vendidos: 194, ingreso: 6790, costo: 1901, margen: 72 },
+  { producto: 'Malteada', vendidos: 152, ingreso: 4560, costo: 1201, margen: 74 },
+];
+
+/* ---- Personal y control de marcaje ---- */
+export type Puesto = 'Cajero' | 'Mesero' | 'Barista' | 'Cocina' | 'Almacenista' | 'Administrador';
+
+/** Estado de marcaje del empleado en el día actual. */
+export type EstadoMarcaje = 'sin_marcar' | 'trabajando' | 'salio';
+
+export interface Empleado {
+  id: string;
+  nombre: string;
+  puesto: Puesto;
+  telefono: string;
+  turno: string;
+  iniciales: string;
+  estado: EstadoMarcaje;
+  /** Hora de entrada marcada hoy (HH:MM) o null si no ha entrado. */
+  entrada: string | null;
+  /** Hora de salida marcada hoy (HH:MM) o null si sigue en turno. */
+  salida: string | null;
+}
+
+/* ---- Gastos / Egresos ---- */
+export type CategoriaGasto =
+  | 'Renta'
+  | 'Servicios'
+  | 'Nómina'
+  | 'Insumos'
+  | 'Mantenimiento'
+  | 'Marketing'
+  | 'Impuestos'
+  | 'Otros';
+
+export type EstadoGasto = 'pagado' | 'pendiente';
+export type MetodoGasto = 'Efectivo' | 'Transferencia' | 'Tarjeta';
+
+export interface Gasto {
+  id: string;
+  fecha: string;
+  concepto: string;
+  categoria: CategoriaGasto;
+  proveedor: string;
+  metodo: MetodoGasto;
+  estado: EstadoGasto;
+  monto: number;
+}
+
+export const categoriasGasto: CategoriaGasto[] = [
+  'Renta', 'Servicios', 'Nómina', 'Insumos', 'Mantenimiento', 'Marketing', 'Impuestos', 'Otros',
+];
+
+export const gastosSeed: Gasto[] = [
+  { id: 'g-1', fecha: '01/07/2026', concepto: 'Renta del local', categoria: 'Renta', proveedor: 'Inmobiliaria Centro', metodo: 'Transferencia', estado: 'pagado', monto: 6500 },
+  { id: 'g-2', fecha: '05/07/2026', concepto: 'Energía eléctrica', categoria: 'Servicios', proveedor: 'EEGSA', metodo: 'Transferencia', estado: 'pagado', monto: 1850 },
+  { id: 'g-3', fecha: '05/07/2026', concepto: 'Agua potable', categoria: 'Servicios', proveedor: 'EMPAGUA', metodo: 'Transferencia', estado: 'pagado', monto: 420 },
+  { id: 'g-4', fecha: '10/07/2026', concepto: 'Internet y teléfono', categoria: 'Servicios', proveedor: 'Claro', metodo: 'Tarjeta', estado: 'pagado', monto: 550 },
+  { id: 'g-5', fecha: '15/07/2026', concepto: 'Quincena de personal', categoria: 'Nómina', proveedor: 'Planilla', metodo: 'Transferencia', estado: 'pagado', monto: 12400 },
+  { id: 'g-6', fecha: '18/07/2026', concepto: 'Reparación de refrigerador', categoria: 'Mantenimiento', proveedor: 'FríoTécnico', metodo: 'Efectivo', estado: 'pagado', monto: 780 },
+  { id: 'g-7', fecha: '20/07/2026', concepto: 'Publicidad en redes', categoria: 'Marketing', proveedor: 'Agencia Pixel', metodo: 'Tarjeta', estado: 'pendiente', monto: 1200 },
+  { id: 'g-8', fecha: '22/07/2026', concepto: 'IVA mensual', categoria: 'Impuestos', proveedor: 'SAT', metodo: 'Transferencia', estado: 'pendiente', monto: 3100 },
+];
+
+/* ---- Compras / Órdenes de compra ---- */
+export type EstadoOrden = 'borrador' | 'enviada' | 'recibida' | 'cancelada';
+
+export interface OrdenCompraItem {
+  insumo: string;
+  cantidad: number;
+  unidad: string;
+  costoUnitario: number;
+}
+
+export interface OrdenCompra {
+  id: string;
+  folio: string;
+  proveedor: string;
+  fecha: string;
+  estado: EstadoOrden;
+  items: OrdenCompraItem[];
+}
+
+export const ordenesSeed: OrdenCompra[] = [
+  {
+    id: 'oc-1', folio: 'OC-0087', proveedor: 'Distribuidora La Carne', fecha: '24/07/2026', estado: 'recibida',
+    items: [
+      { insumo: 'Carne de res (molida)', cantidad: 10, unidad: 'kg', costoUnitario: 62 },
+      { insumo: 'Alitas de pollo', cantidad: 8, unidad: 'kg', costoUnitario: 38 },
+    ],
+  },
+  {
+    id: 'oc-2', folio: 'OC-0088', proveedor: 'Lácteos La Pradera', fecha: '25/07/2026', estado: 'enviada',
+    items: [
+      { insumo: 'Leche entera', cantidad: 40, unidad: 'L', costoUnitario: 8.5 },
+      { insumo: 'Leche deslactosada', cantidad: 12, unidad: 'L', costoUnitario: 11 },
+      { insumo: 'Mantequilla', cantidad: 5, unidad: 'kg', costoUnitario: 58 },
+    ],
+  },
+  {
+    id: 'oc-3', folio: 'OC-0089', proveedor: 'Empaques del Sur', fecha: '25/07/2026', estado: 'borrador',
+    items: [
+      { insumo: 'Vasos 16 oz', cantidad: 500, unidad: 'pz', costoUnitario: 0.9 },
+      { insumo: 'Servilletas', cantidad: 20, unidad: 'paq', costoUnitario: 12 },
+    ],
+  },
+];
+
+export const proveedoresSeed = [
+  'Distribuidora El Grano',
+  'Lácteos La Pradera',
+  'Empaques del Sur',
+  'Panadería Central',
+];
+
+/* ---- Promociones ---- */
+export type TipoPromo = 'porcentaje' | 'monto' | '2x1' | 'combo';
+
+export interface Promocion {
+  id: string;
+  nombre: string;
+  tipo: TipoPromo;
+  /** Valor: % para porcentaje, Q para monto/combo; ignorado en 2x1. */
+  valor: number;
+  aplicaEn: string;
+  vigencia: string;
+  activa: boolean;
+}
+
+export const promocionesSeed: Promocion[] = [
+  { id: 'promo-1', nombre: 'Happy Hour papas', tipo: 'porcentaje', valor: 20, aplicaEn: 'Papas y fritos', vigencia: 'L–V · 15:00–17:00', activa: true },
+  { id: 'promo-2', nombre: '2x1 en Malteadas', tipo: '2x1', valor: 0, aplicaEn: 'Malteada', vigencia: 'Sábados', activa: true },
+  { id: 'promo-3', nombre: 'Combo del día', tipo: 'combo', valor: 55, aplicaEn: 'Hamburguesa + Papas + Refresco', vigencia: 'Todos los días · 12:00–16:00', activa: true },
+  { id: 'promo-4', nombre: 'Q10 de descuento', tipo: 'monto', valor: 10, aplicaEn: 'Compras > Q100', vigencia: 'Fin de mes', activa: false },
+];
+
+export const empleadosSeed: Empleado[] = [
+  { id: 'e-1', nombre: 'Ana Rodríguez', puesto: 'Cajero', telefono: '+502 5555 1010', turno: 'Mañana · 07:00–15:00', iniciales: 'AR', estado: 'trabajando', entrada: '06:58', salida: null },
+  { id: 'e-2', nombre: 'Luis Gómez', puesto: 'Mesero', telefono: '+502 5555 2020', turno: 'Mañana · 07:00–15:00', iniciales: 'LG', estado: 'trabajando', entrada: '07:05', salida: null },
+  { id: 'e-3', nombre: 'María Pérez', puesto: 'Cocina', telefono: '+502 5555 3030', turno: 'Mañana · 06:00–14:00', iniciales: 'MP', estado: 'trabajando', entrada: '05:56', salida: null },
+  { id: 'e-4', nombre: 'Carlos Ruiz', puesto: 'Cocina', telefono: '+502 5555 4040', turno: 'Tarde · 14:00–22:00', iniciales: 'CR', estado: 'sin_marcar', entrada: null, salida: null },
+  { id: 'e-5', nombre: 'Sofía Herrera', puesto: 'Almacenista', telefono: '+502 5555 5050', turno: 'Mañana · 07:00–15:00', iniciales: 'SH', estado: 'salio', entrada: '07:00', salida: '13:20' },
+  { id: 'e-6', nombre: 'Diego Morales', puesto: 'Mesero', telefono: '+502 5555 6060', turno: 'Tarde · 14:00–22:00', iniciales: 'DM', estado: 'sin_marcar', entrada: null, salida: null },
+  { id: 'e-7', nombre: 'Elena Castro', puesto: 'Administrador', telefono: '+502 5555 7070', turno: 'Completo · 08:00–17:00', iniciales: 'EC', estado: 'trabajando', entrada: '07:52', salida: null },
 ];

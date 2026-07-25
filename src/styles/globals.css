@@ -93,3 +93,15 @@
     border-radius: var(--radius-full);
   }
 }
+
+/* Entrada de los toasts (deslizan desde la derecha) */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

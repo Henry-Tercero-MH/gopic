@@ -3,7 +3,10 @@ import { UserPlus, Pencil, Trash2, X, Check, Search, Star } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
 
 interface Cliente {
@@ -33,6 +36,8 @@ export function ClientesPage() {
   const [busqueda, setBusqueda] = useState('');
   const [editando, setEditando] = useState<Cliente | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const q = busqueda.trim().toLowerCase();
   const visibles = clientes.filter(
@@ -40,12 +45,26 @@ export function ClientesPage() {
   );
 
   function guardar(c: Cliente) {
-    setClientes((prev) => (prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c]));
+    const esNuevo = !clientes.some((x) => x.id === c.id);
+    setClientes((prev) => (esNuevo ? [...prev, c] : prev.map((x) => (x.id === c.id ? c : x))));
     setAbierto(false);
+    toast.exito(esNuevo ? `Cliente "${c.nombre}" agregado.` : `Cliente "${c.nombre}" actualizado.`);
+  }
+
+  async function eliminar(c: Cliente) {
+    const ok = await confirm({
+      titulo: 'Eliminar cliente',
+      mensaje: `¿Eliminar a "${c.nombre}"? Esta acción no se puede deshacer.`,
+      confirmar: 'Eliminar',
+      peligro: true,
+    });
+    if (!ok) return;
+    setClientes((prev) => prev.filter((x) => x.id !== c.id));
+    toast.info(`Cliente "${c.nombre}" eliminado.`);
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Clientes"
         subtitle="Directorio de clientes para facturación y fidelización"
@@ -116,7 +135,7 @@ export function ClientesPage() {
                           <Pencil size={16} />
                         </button>
                         <button
-                          onClick={() => setClientes((prev) => prev.filter((x) => x.id !== c.id))}
+                          onClick={() => eliminar(c)}
                           aria-label="Eliminar"
                           className="grid h-8 w-8 place-items-center rounded-md border border-border text-danger hover:bg-danger/10"
                         >
@@ -145,47 +164,39 @@ function ClienteModal({ cliente, onCerrar, onGuardar }: { cliente: Cliente | nul
   const valido = nombre.trim() !== '';
 
   return (
-    <div className="fixed inset-0 z-modal grid place-items-center bg-text/40 p-4" onClick={onCerrar}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={cliente ? 'Editar cliente' : 'Nuevo cliente'}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-xl bg-surface shadow-modal"
-      >
-        <header className="flex items-center justify-between border-b border-border p-4">
-          <h3 className="font-display text-lg font-semibold text-text">{cliente ? 'Editar cliente' : 'Nuevo cliente'}</h3>
-          <button onClick={onCerrar} aria-label="Cerrar" className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk">
-            <X size={18} />
-          </button>
-        </header>
-        <div className="space-y-4 p-4">
-          <Campo label="Nombre / Razón social">
-            <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
+    <Modal onClose={onCerrar} ariaLabel={cliente ? 'Editar cliente' : 'Nuevo cliente'} className="w-full max-w-md">
+      <header className="flex items-center justify-between border-b border-border p-4">
+        <h3 className="font-display text-lg font-semibold text-text">{cliente ? 'Editar cliente' : 'Nuevo cliente'}</h3>
+        <button onClick={onCerrar} aria-label="Cerrar" className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk">
+          <X size={18} />
+        </button>
+      </header>
+      <div className="space-y-4 p-4">
+        <Campo label="Nombre / Razón social">
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
+        </Campo>
+        <Campo label="NIT">
+          <input value={nit} onChange={(e) => setNit(e.target.value)} placeholder="CF" className={cn(inputCls, 'num')} />
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Teléfono">
+            <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inputCls} />
           </Campo>
-          <Campo label="NIT">
-            <input value={nit} onChange={(e) => setNit(e.target.value)} placeholder="CF" className={cn(inputCls, 'num')} />
+          <Campo label="Correo">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
           </Campo>
-          <div className="grid grid-cols-2 gap-3">
-            <Campo label="Teléfono">
-              <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inputCls} />
-            </Campo>
-            <Campo label="Correo">
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
-            </Campo>
-          </div>
         </div>
-        <footer className="flex justify-end gap-2 border-t border-border p-4">
-          <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
-          <Button
-            disabled={!valido}
-            onClick={() => onGuardar({ id: cliente?.id ?? `c-${Date.now()}`, nombre: nombre.trim(), nit: nit.trim(), telefono: telefono.trim(), email: email.trim(), visitas: cliente?.visitas ?? 0 })}
-          >
-            <Check size={18} /> Guardar
-          </Button>
-        </footer>
       </div>
-    </div>
+      <footer className="flex justify-end gap-2 border-t border-border p-4">
+        <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
+        <Button
+          disabled={!valido}
+          onClick={() => onGuardar({ id: cliente?.id ?? `c-${Date.now()}`, nombre: nombre.trim(), nit: nit.trim(), telefono: telefono.trim(), email: email.trim(), visitas: cliente?.visitas ?? 0 })}
+        >
+          <Check size={18} /> Guardar
+        </Button>
+      </footer>
+    </Modal>
   );
 }
 

@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, LogIn } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useAuth, type SessionUser } from '@/lib/auth';
+import { aplicarTema, leerTema } from '@/lib/theme';
 
 const USUARIO_DEMO: SessionUser = { nombre: 'Ana Rodríguez', rol: 'Cajera · Turno mañana', iniciales: 'AR' };
 
@@ -25,6 +26,11 @@ export function LoginPage() {
   const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [dark, setDark] = useState(() => leerTema() === 'dark');
+
+  useEffect(() => {
+    aplicarTema(dark ? 'dark' : 'light');
+  }, [dark]);
 
   // Si ya hay sesión activa, no mostramos el login.
   if (user) return <Navigate to={destino} replace />;
@@ -47,7 +53,15 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-sunk px-3 py-4 sm:px-6 sm:py-6">
+    <div className="relative flex min-h-screen items-center justify-center bg-surface-sunk px-3 py-4 sm:px-6 sm:py-6">
+      <button
+        type="button"
+        onClick={() => setDark((v) => !v)}
+        aria-label="Cambiar tema"
+        className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-md border border-border bg-surface text-text-muted hover:bg-surface-sunk hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-500"
+      >
+        {dark ? <Moon size={18} /> : <Sun size={18} />}
+      </button>
       <div className="flex w-full max-w-3xl flex-col items-center gap-6 sm:gap-10 lg:flex-row lg:justify-center lg:gap-16">
         {/* Lado del logo */}
         <aside className="hidden items-center lg:flex">

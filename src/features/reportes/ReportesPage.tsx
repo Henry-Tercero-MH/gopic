@@ -1,33 +1,104 @@
-import { FileDown, FileSpreadsheet } from 'lucide-react';
+import { FileDown, FileSpreadsheet, TrendingUp, TrendingDown, Scale } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { formatCurrency } from '@/lib/format';
-import { ventasPorDia, ventasPorCategoria, rentabilidadProductos } from '@/mock/data';
+import { useToast } from '@/lib/toast';
+import { exportarCSV } from '@/lib/exportar';
+import { cn } from '@/lib/cn';
+import { ventasPorDia, ventasPorCategoria, rentabilidadProductos, gastosSeed } from '@/mock/data';
 
 const barColors = ['bg-brand-500', 'bg-action-500', 'bg-accent-400', 'bg-info', 'bg-brand-300'];
 
+/** Ingresos del mes (base coherente con el negocio para el estado de resultados). */
+const INGRESOS_MES = 128_400;
+
 export function ReportesPage() {
+  const toast = useToast();
   const maxDia = Math.max(...ventasPorDia.map((v) => v.monto));
   const totalSemana = ventasPorDia.reduce((s, v) => s + v.monto, 0);
 
+  // Rentabilidad del mes: ingresos − gastos (del módulo de Gastos) = utilidad.
+  const gastosMes = gastosSeed.reduce((s, g) => s + g.monto, 0);
+  const utilidad = INGRESOS_MES - gastosMes;
+  const margenNeto = ((utilidad / INGRESOS_MES) * 100).toFixed(1);
+
+  function exportarExcel() {
+    exportarCSV(
+      'rentabilidad-productos',
+      ['Producto', 'Vendidos', 'Ingreso', 'Costo', 'Margen %'],
+      rentabilidadProductos.map((p) => [p.producto, p.vendidos, p.ingreso, p.costo, p.margen]),
+    );
+    toast.exito('Reporte exportado como CSV (compatible con Excel).');
+  }
+
+  function exportarPDF() {
+    toast.info('Abriendo vista de impresión…');
+    setTimeout(() => window.print(), 300);
+  }
+
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Reportes"
-        subtitle="Semana del 17 al 23 de julio"
+        subtitle="Julio 2026"
         actions={
           <>
-            <Button variant="secondary">
+            <Button variant="secondary" onClick={exportarExcel}>
               <FileSpreadsheet size={18} /> Excel
             </Button>
-            <Button variant="secondary">
+            <Button variant="secondary" onClick={exportarPDF}>
               <FileDown size={18} /> PDF
             </Button>
           </>
         }
       />
+
+      {/* Estado de resultados del mes: ingresos − gastos = utilidad */}
+      <Card className="p-4">
+        <h2 className="font-display text-lg font-semibold text-text">Rentabilidad del mes</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <ResultadoTile
+            icon={TrendingUp}
+            tono="success"
+            label="Ingresos"
+            valor={formatCurrency(INGRESOS_MES)}
+            hint="ventas totales"
+          />
+          <ResultadoTile
+            icon={TrendingDown}
+            tono="danger"
+            label="Gastos"
+            valor={formatCurrency(gastosMes)}
+            hint={`${gastosSeed.length} egresos`}
+          />
+          <ResultadoTile
+            icon={Scale}
+            tono="action"
+            label="Utilidad neta"
+            valor={formatCurrency(utilidad)}
+            hint={`margen ${margenNeto}%`}
+            destacado
+          />
+        </div>
+
+        {/* Barra visual ingresos vs gastos */}
+        <div className="mt-4">
+          <div className="flex h-3 overflow-hidden rounded-full bg-surface-sunk">
+            <div className="bg-success" style={{ width: `${(utilidad / INGRESOS_MES) * 100}%` }} title="Utilidad" />
+            <div className="bg-danger" style={{ width: `${(gastosMes / INGRESOS_MES) * 100}%` }} title="Gastos" />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-4 text-xs text-text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-success" /> Utilidad {margenNeto}%
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-danger" /> Gastos {((gastosMes / INGRESOS_MES) * 100).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Ventas por día */}
@@ -100,6 +171,40 @@ export function ReportesPage() {
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function ResultadoTile({
+  icon: Icon,
+  tono,
+  label,
+  valor,
+  hint,
+  destacado,
+}: {
+  icon: typeof TrendingUp;
+  tono: 'success' | 'danger' | 'action';
+  label: string;
+  valor: string;
+  hint: string;
+  destacado?: boolean;
+}) {
+  const tonos: Record<string, string> = {
+    success: 'bg-success/15 text-success',
+    danger: 'bg-danger/12 text-danger',
+    action: 'bg-action-50 text-action-700',
+  };
+  return (
+    <div className={cn('rounded-lg border p-4', destacado ? 'border-action-500 bg-action-50/40' : 'border-border bg-surface-alt')}>
+      <div className="flex items-center gap-2">
+        <span className={cn('grid h-8 w-8 place-items-center rounded-md', tonos[tono])}>
+          <Icon size={16} />
+        </span>
+        <span className="text-sm font-medium text-text-muted">{label}</span>
+      </div>
+      <div className="num mt-2 text-2xl font-semibold text-text">{valor}</div>
+      <div className="text-xs text-text-muted">{hint}</div>
     </div>
   );
 }

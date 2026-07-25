@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { recetas, recetaLatte } from '@/mock/data';
+import { recetas } from '@/mock/data';
 
 export function RecetarioPage() {
   const [seleccionada, setSeleccionada] = useState(recetas[0].id);
@@ -14,7 +14,7 @@ export function RecetarioPage() {
   const margen = Math.round(((receta.precioVenta - receta.costo) / receta.precioVenta) * 100);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Recetario y costeo"
         subtitle={`${recetas.length} recetas · costo calculado desde inventario`}
@@ -43,7 +43,7 @@ export function RecetarioPage() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-text">{r.producto}</div>
                   <div className="num text-xs text-text-muted">
-                    Costo {formatCurrency(r.costo)} · {r.insumos} insumos
+                    Costo {formatCurrency(r.costo)} · {r.detalle.length} insumos
                   </div>
                 </div>
                 <Badge tone={m >= 70 ? 'success' : 'warning'}>{m}%</Badge>
@@ -84,26 +84,28 @@ export function RecetarioPage() {
                 Ingredientes de “{receta.producto}”
               </h2>
             </div>
-            <table className="mt-3 w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-text-muted">
-                  <th className="pb-2 font-medium">Insumo</th>
-                  <th className="pb-2 text-right font-medium">Cantidad</th>
-                  <th className="pb-2 text-right font-medium">Merma</th>
-                  <th className="pb-2 text-right font-medium">Costo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recetaLatte.map((it, i) => (
-                  <tr key={i} className="border-b border-border/60 last:border-0">
-                    <td className="py-2 font-medium text-text">{it.insumo}</td>
-                    <td className="num py-2 text-right text-text-muted">{it.cantidad}</td>
-                    <td className="num py-2 text-right text-text-muted">{it.merma}</td>
-                    <td className="num py-2 text-right font-semibold text-text">{formatCurrency(it.costo)}</td>
+            <div className="mt-3 overflow-x-auto scroll-thin">
+              <table className="w-full min-w-[26rem] text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-text-muted">
+                    <th className="pb-2 font-medium">Insumo</th>
+                    <th className="pb-2 text-right font-medium">Cantidad</th>
+                    <th className="pb-2 text-right font-medium">Merma</th>
+                    <th className="pb-2 text-right font-medium">Costo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {receta.detalle.map((it, i) => (
+                    <tr key={i} className="border-b border-border/60 last:border-0">
+                      <td className="py-2 font-medium text-text">{it.insumo}</td>
+                      <td className="num py-2 text-right text-text-muted">{it.cantidad}</td>
+                      <td className="num py-2 text-right text-text-muted">{it.merma}</td>
+                      <td className="num py-2 text-right font-semibold text-text">{formatCurrency(it.costo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <p className="mt-3 text-xs text-text-muted">
               El costo se recalcula automáticamente cuando cambia el precio de un insumo en inventario.
               Al facturar, estos insumos se descuentan por explosión de receta.

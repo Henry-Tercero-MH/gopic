@@ -7,11 +7,13 @@ import {
   Utensils,
   ChefHat,
   Users,
+  Contact,
   Package,
   Library,
   BookOpen,
   ShoppingCart,
   Tag,
+  TrendingDown,
   BarChart3,
   Settings,
   Bird,
@@ -25,6 +27,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth';
+import { useOperacion } from '@/lib/operacion';
+import { aplicarTema, leerTema } from '@/lib/theme';
+import { formatCurrency } from '@/lib/format';
 import { Drawer } from '@/components/ui/Drawer';
 
 interface NavItem {
@@ -53,12 +58,14 @@ const navGroups: NavGroup[] = [
   {
     titulo: 'Gestión',
     items: [
+      { to: '/personal', label: 'Personal', icon: Contact },
       { to: '/clientes', label: 'Clientes', icon: Users },
       { to: '/inventario', label: 'Inventario', icon: Package },
       { to: '/catalogos', label: 'Catálogos', icon: Library },
       { to: '/recetario', label: 'Recetario', icon: BookOpen },
-      { to: '/compras', label: 'Compras', icon: ShoppingCart, soon: true },
-      { to: '/promociones', label: 'Promociones', icon: Tag, soon: true },
+      { to: '/compras', label: 'Compras', icon: ShoppingCart },
+      { to: '/gastos', label: 'Gastos', icon: TrendingDown },
+      { to: '/promociones', label: 'Promociones', icon: Tag },
     ],
   },
   {
@@ -70,20 +77,19 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const THEME_KEY = 'gopic.theme';
 const COLLAPSE_KEY = 'gopic.sidebar-collapsed';
 
 export function AppShell() {
   const { user, logout } = useAuth();
+  const { cajaAbierta, fondoCaja } = useOperacion();
   const navigate = useNavigate();
 
-  const [dark, setDark] = useState(() => localStorage.getItem(THEME_KEY) === 'dark');
+  const [dark, setDark] = useState(() => leerTema() === 'dark');
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
+    aplicarTema(dark ? 'dark' : 'light');
   }, [dark]);
 
   useEffect(() => {
@@ -230,9 +236,15 @@ export function AppShell() {
               <Menu size={18} />
             </button>
             <Bird size={20} className="text-brand-500 md:hidden" />
-            <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-[11px] font-semibold text-success sm:text-xs">
-              <span className="h-2 w-2 rounded-full bg-success" /> Caja abierta · fondo Q500
-            </span>
+            {cajaAbierta ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-[11px] font-semibold text-success sm:text-xs">
+                <span className="h-2 w-2 rounded-full bg-success" /> Caja abierta · fondo {formatCurrency(fondoCaja)}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-full bg-surface-sunk px-3 py-1 text-[11px] font-semibold text-text-muted sm:text-xs">
+                <span className="h-2 w-2 rounded-full bg-text-muted" /> Caja cerrada
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

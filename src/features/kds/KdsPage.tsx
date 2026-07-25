@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Trash2,
-  RotateCcw,
   ClipboardList,
   History,
   Undo2,
@@ -18,12 +17,11 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
 import { Drawer } from '@/components/ui/Drawer';
 import { cn } from '@/lib/cn';
 import { elapsed, formatTime } from '@/lib/format';
+import { useOperacion } from '@/lib/operacion';
 import {
-  comandas as comandasIniciales,
   getPreparacion,
   type Comanda,
   type EstadoComanda,
@@ -65,16 +63,13 @@ const iconoTiempoPorNivel: Record<'ok' | 'medio' | 'alto', LucideIcon> = {
 };
 
 export function KdsPage() {
-  // Estado interactivo: las comandas se mueven entre columnas y se pueden eliminar.
-  const [lista, setLista] = useState<Comanda[]>(comandasIniciales);
-  // Comandas entregadas / descartadas, disponibles para restaurar.
-  const [historial, setHistorial] = useState<Comanda[]>([]);
+  // Fuente única: las comandas viven en el store de operación (llegan desde el POS).
+  const { comandas, moverComanda, retirarComanda, restaurarComanda } = useOperacion();
+
   // Comanda cuya receta se muestra en el panel lateral.
   const [activa, setActiva] = useState<Comanda | null>(null);
   // Panel de historial abierto.
   const [historialAbierto, setHistorialAbierto] = useState(false);
-  // Confirmación del reinicio del tablero (acción destructiva).
-  const [reinicioAbierto, setReinicioAbierto] = useState(false);
   // Reloj que avanza cada segundo para que los contadores corran en vivo.
   const [now, setNow] = useState(() => Date.now());
 
@@ -83,59 +78,38 @@ export function KdsPage() {
     return () => clearInterval(id);
   }, []);
 
+  // Activas = sin desenlace; historial = entregadas/descartadas.
+  const lista = comandas.filter((c) => !c.desenlace);
+  const historial = comandas.filter((c) => c.desenlace);
+
   /** Avanza o retrocede una comanda entre columnas. */
   function mover(id: string, dir: 1 | -1) {
-    setLista((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c;
-        const i = orden.indexOf(c.estado);
-        const siguiente = orden[i + dir];
-        return siguiente ? { ...c, estado: siguiente } : c;
-      }),
-    );
+    const c = lista.find((x) => x.id === id);
+    if (!c) return;
+    const siguiente = orden[orden.indexOf(c.estado) + dir];
+    if (siguiente) moverComanda(id, siguiente);
   }
 
   /** Saca una comanda del tablero con su desenlace: congela el contador y la manda al historial. */
   function retirar(id: string, desenlace: Desenlace) {
-    const c = lista.find((x) => x.id === id);
-    if (c) {
-      const cerrada = { ...c, congeladaEn: Date.now(), desenlace };
-      setHistorial((h) => [cerrada, ...h.filter((e) => e.id !== id)]);
-    }
-    setLista((prev) => prev.filter((x) => x.id !== id));
+    retirarComanda(id, desenlace);
     setActiva((a) => (a?.id === id ? null : a));
-  }
-
-  /** Regresa una comanda del historial al tablero, en su último estado (sin desenlace). */
-  function restaurar(id: string) {
-    const c = historial.find((x) => x.id === id);
-    if (!c) return;
-    const { desenlace: _omitido, ...enTablero } = c;
-    setLista((prev) => (prev.some((x) => x.id === id) ? prev : [...prev, enTablero]));
-    setHistorial((h) => h.filter((x) => x.id !== id));
-  }
-
-  /** Restaura el tablero a las comandas de demostración. */
-  function reiniciar() {
-    setLista(comandasIniciales);
-    setHistorial([]);
-    setReinicioAbierto(false);
   }
 
   const totalActivas = lista.length;
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-6 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-4 sm:px-6">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-text lg:text-3xl">Cocina / Barra</h1>
+          <h1 className="font-display text-xl font-semibold text-text sm:text-2xl lg:text-3xl">Cocina / Barra</h1>
           <p className="text-sm text-text-muted">
-            Comandas en tiempo real · {totalActivas} activas
+            {totalActivas} activas
             {historial.length > 0 && <> · {historial.length} en historial</>}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="num text-2xl font-semibold tabular-nums text-text lg:text-3xl">{formatTime(new Date(now))}</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="num hidden text-xl font-semibold tabular-nums text-text sm:inline sm:text-2xl lg:text-3xl">{formatTime(new Date(now))}</span>
           <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-xs font-semibold text-success">
             <span className="h-2 w-2 animate-pulse rounded-full bg-success" /> En vivo
           </span>
@@ -146,9 +120,6 @@ export function KdsPage() {
                 {historial.length}
               </span>
             )}
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setReinicioAbierto(true)}>
-            <RotateCcw size={16} /> Reiniciar
           </Button>
         </div>
       </header>
@@ -194,35 +165,8 @@ export function KdsPage() {
         historial={historial}
         now={now}
         onClose={() => setHistorialAbierto(false)}
-        onRestaurar={restaurar}
+        onRestaurar={restaurarComanda}
       />
-
-      {reinicioAbierto && (
-        <Modal onClose={() => setReinicioAbierto(false)} ariaLabel="Confirmar reinicio" className="w-full max-w-sm">
-          <div className="p-6">
-            <div className="flex items-start gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-danger/15 text-danger">
-                <AlertTriangle size={22} />
-              </span>
-              <div>
-                <h3 className="font-display text-lg font-semibold text-text">¿Reiniciar el tablero?</h3>
-                <p className="mt-1 text-sm text-text-muted">
-                  Se restaurarán las comandas de demostración y se vaciará el historial
-                  {historial.length > 0 && <> ({historial.length} en historial)</>}. Esta acción no se puede deshacer.
-                </p>
-              </div>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <Button variant="secondary" size="lg" onClick={() => setReinicioAbierto(false)}>
-                Cancelar
-              </Button>
-              <Button variant="danger" size="lg" onClick={reiniciar}>
-                <RotateCcw size={18} /> Reiniciar
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

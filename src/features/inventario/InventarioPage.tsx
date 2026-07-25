@@ -15,7 +15,8 @@ import { StatCard } from '@/components/ui/StatCard';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { insumos, kardexEjemplo, type NivelStock } from '@/mock/data';
+import { useOperacion } from '@/lib/operacion';
+import { kardexEjemplo, type NivelStock } from '@/mock/data';
 
 const nivelBadge: Record<NivelStock, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
   ok: { label: 'En nivel', tone: 'success' },
@@ -24,6 +25,7 @@ const nivelBadge: Record<NivelStock, { label: string; tone: 'success' | 'warning
 };
 
 export function InventarioPage() {
+  const { insumos } = useOperacion();
   const [q, setQ] = useState('');
   const [seleccionado, setSeleccionado] = useState(insumos[0]?.id ?? '');
 
@@ -37,7 +39,7 @@ export function InventarioPage() {
   const bajos = insumos.filter((i) => i.nivel === 'bajo').length;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Inventario"
         subtitle={`${insumos.length} insumos registrados`}

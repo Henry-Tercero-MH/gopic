@@ -15,7 +15,10 @@ import {
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useToast } from '@/lib/toast';
+import { useOperacion } from '@/lib/operacion';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
 
@@ -31,11 +34,8 @@ interface Movimiento {
   monto: number;
 }
 
-const MOVS_SEED: Movimiento[] = [
-  { id: 'mv-1', hora: '08:00', tipo: 'Apertura', concepto: 'Fondo de caja', monto: 500 },
-  { id: 'mv-2', hora: '09:12', tipo: 'Venta', concepto: 'Ticket #1039', metodo: 'Tarjeta', monto: 96 },
-  { id: 'mv-3', hora: '09:40', tipo: 'Venta', concepto: 'Ticket #1040', metodo: 'Efectivo', monto: 132 },
-  { id: 'mv-4', hora: '10:15', tipo: 'Venta', concepto: 'Ticket #1041', metodo: 'Efectivo', monto: 68 },
+// Movimientos manuales de ejemplo del turno (la apertura y las ventas vienen del store).
+const MOVS_MANUALES_SEED: Movimiento[] = [
   { id: 'mv-5', hora: '10:50', tipo: 'Retiro', concepto: 'Compra de servilletas', monto: 40 },
 ];
 
@@ -50,12 +50,34 @@ const horaActual = () =>
   new Date().toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
 
 export function CajaPage() {
-  const [movs, setMovs] = useState<Movimiento[]>(MOVS_SEED);
-  const [abierta, setAbierta] = useState(true);
+  const [movsManuales, setMovsManuales] = useState<Movimiento[]>(MOVS_MANUALES_SEED);
   const [modalMov, setModalMov] = useState(false);
   const [modalCorte, setModalCorte] = useState(false);
+  const [modalApertura, setModalApertura] = useState(false);
+  const toast = useToast();
+  const { ventas, cajaAbierta, fondoCaja, cajero, abrirCaja, cerrarCaja } = useOperacion();
 
-  const fondo = movs.filter((m) => m.tipo === 'Apertura').reduce((s, m) => s + m.monto, 0);
+  // El fondo de apertura viene del store (definido al abrir la caja).
+  const aperturaMov: Movimiento = {
+    id: 'apertura', hora: '08:00', tipo: 'Apertura', concepto: 'Fondo de caja', monto: fondoCaja,
+  };
+
+  // Las ventas cobradas en el POS entran a la caja como movimientos "Venta".
+  const ventasComoMov: Movimiento[] = ventas.map((v) => ({
+    id: v.id,
+    hora: v.hora,
+    tipo: 'Venta',
+    concepto: `Ticket ${v.folio}${v.tipoVenta === 'mesa' ? '' : v.tipoVenta === 'llevar' ? ' · Para llevar' : ' · Mostrador'}`,
+    metodo: v.metodo === 'efectivo' ? 'Efectivo' : 'Tarjeta',
+    monto: v.total,
+  }));
+
+  // Movimientos del turno: apertura + manuales + ventas del POS, ordenados por hora.
+  const movs = cajaAbierta
+    ? [aperturaMov, ...movsManuales, ...ventasComoMov].sort((a, b) => a.hora.localeCompare(b.hora))
+    : [];
+
+  const fondo = fondoCaja;
   const ventasEfectivo = movs.filter((m) => m.tipo === 'Venta' && m.metodo === 'Efectivo').reduce((s, m) => s + m.monto, 0);
   const ventasTarjeta = movs.filter((m) => m.tipo === 'Venta' && m.metodo === 'Tarjeta').reduce((s, m) => s + m.monto, 0);
   const ingresos = movs.filter((m) => m.tipo === 'Ingreso').reduce((s, m) => s + m.monto, 0);
@@ -64,17 +86,18 @@ export function CajaPage() {
   const efectivoEsperado = fondo + ventasEfectivo + ingresos - retiros;
 
   function agregarMov(tipo: 'Ingreso' | 'Retiro', concepto: string, monto: number) {
-    setMovs((prev) => [...prev, { id: `mv-${Date.now()}`, hora: horaActual(), tipo, concepto, monto }]);
+    setMovsManuales((prev) => [...prev, { id: `mv-${Date.now()}`, hora: horaActual(), tipo, concepto, monto }]);
     setModalMov(false);
+    toast.exito(`${tipo} de ${formatCurrency(monto)} registrado.`);
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Caja"
         subtitle="Apertura, movimientos y corte del turno"
         actions={
-          abierta ? (
+          cajaAbierta ? (
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setModalMov(true)}>
                 <Plus size={18} /> Movimiento
@@ -84,7 +107,7 @@ export function CajaPage() {
               </Button>
             </div>
           ) : (
-            <Button onClick={() => { setMovs(MOVS_SEED); setAbierta(true); }}>
+            <Button onClick={() => setModalApertura(true)}>
               <Wallet size={18} /> Abrir caja
             </Button>
           )
@@ -92,17 +115,17 @@ export function CajaPage() {
       />
 
       {/* Estado de la caja */}
-      <div className={cn('flex items-center gap-3 rounded-lg border p-4', abierta ? 'border-success/30 bg-success/5' : 'border-border bg-surface-alt')}>
-        <span className={cn('grid h-10 w-10 place-items-center rounded-full', abierta ? 'bg-success/15 text-success' : 'bg-surface-sunk text-text-muted')}>
+      <div className={cn('flex items-center gap-3 rounded-lg border p-4', cajaAbierta ? 'border-success/30 bg-success/5' : 'border-border bg-surface-alt')}>
+        <span className={cn('grid h-10 w-10 place-items-center rounded-full', cajaAbierta ? 'bg-success/15 text-success' : 'bg-surface-sunk text-text-muted')}>
           <Wallet size={20} />
         </span>
         <div className="flex-1">
-          <p className="font-medium text-text">{abierta ? 'Caja abierta' : 'Caja cerrada'}</p>
+          <p className="font-medium text-text">{cajaAbierta ? 'Caja abierta' : 'Caja cerrada'}</p>
           <p className="text-sm text-text-muted">
-            {abierta ? `Cajero: Ana Rodríguez · Fondo inicial ${formatCurrency(fondo)}` : 'Abre la caja para iniciar el turno.'}
+            {cajaAbierta ? `Cajero: ${cajero} · Fondo inicial ${formatCurrency(fondo)}` : 'Abre la caja para iniciar el turno.'}
           </p>
         </div>
-        {abierta && <Badge tone="success">En turno</Badge>}
+        {cajaAbierta && <Badge tone="success">En turno</Badge>}
       </div>
 
       {/* KPIs */}
@@ -160,10 +183,77 @@ export function CajaPage() {
           retiros={retiros}
           efectivoEsperado={efectivoEsperado}
           onCerrar={() => setModalCorte(false)}
-          onConfirmar={() => { setAbierta(false); setModalCorte(false); }}
+          onConfirmar={() => {
+            cerrarCaja();
+            setMovsManuales([]);
+            setModalCorte(false);
+            toast.exito('Corte de caja realizado. Turno cerrado.');
+          }}
+        />
+      )}
+      {modalApertura && (
+        <AperturaModal
+          cajeroSugerido={cajero}
+          onCerrar={() => setModalApertura(false)}
+          onAbrir={(fondoInicial, nombreCajero) => {
+            abrirCaja(fondoInicial, nombreCajero);
+            setMovsManuales([]);
+            setModalApertura(false);
+            toast.exito(`Caja abierta con fondo de ${formatCurrency(fondoInicial)}.`);
+          }}
         />
       )}
     </div>
+  );
+}
+
+function AperturaModal({
+  cajeroSugerido,
+  onCerrar,
+  onAbrir,
+}: {
+  cajeroSugerido: string;
+  onCerrar: () => void;
+  onAbrir: (fondo: number, cajero: string) => void;
+}) {
+  const [fondo, setFondo] = useState('500');
+  const [cajero, setCajero] = useState(cajeroSugerido);
+  const fondoNum = parseFloat(fondo) || 0;
+  const valido = fondoNum >= 0 && cajero.trim() !== '';
+
+  return (
+    <ModalShell titulo="Abrir caja" onCerrar={onCerrar}>
+      <div className="space-y-4 p-4">
+        <p className="text-sm text-text-muted">
+          Indica el efectivo con el que inicia el turno. Este fondo se usará como base para el arqueo al cerrar.
+        </p>
+        <label className="block">
+          <span className="text-sm font-medium text-text">Cajero responsable</span>
+          <input value={cajero} onChange={(e) => setCajero(e.target.value)} className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-text">Fondo de apertura (Q)</span>
+          <input type="number" min={0} step="0.01" value={fondo} onChange={(e) => setFondo(e.target.value)} autoFocus className={cn(inputCls, 'num')} />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {[300, 500, 1000].map((m) => (
+            <button
+              key={m}
+              onClick={() => setFondo(String(m))}
+              className="num rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-surface-sunk"
+            >
+              {formatCurrency(m)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <footer className="flex justify-end gap-2 border-t border-border p-4">
+        <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
+        <Button disabled={!valido} onClick={() => onAbrir(fondoNum, cajero.trim())}>
+          <Wallet size={18} /> Abrir caja
+        </Button>
+      </footer>
+    </ModalShell>
   );
 }
 
@@ -286,22 +376,14 @@ const inputCls =
 
 function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-modal grid place-items-center bg-text/40 p-4" onClick={onCerrar}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={titulo}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-xl bg-surface shadow-modal"
-      >
-        <header className="flex items-center justify-between border-b border-border p-4">
-          <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
-          <button onClick={onCerrar} aria-label="Cerrar" className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk">
-            <X size={18} />
-          </button>
-        </header>
-        {children}
-      </div>
-    </div>
+    <Modal onClose={onCerrar} ariaLabel={titulo} className="w-full max-w-md">
+      <header className="flex items-center justify-between border-b border-border p-4">
+        <h3 className="font-display text-lg font-semibold text-text">{titulo}</h3>
+        <button onClick={onCerrar} aria-label="Cerrar" className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk">
+          <X size={18} />
+        </button>
+      </header>
+      {children}
+    </Modal>
   );
 }
