@@ -7,6 +7,14 @@ import { aplicarTema, leerTema } from '@/lib/theme';
 
 const USUARIO_DEMO: SessionUser = { nombre: 'Ana Rodríguez', rol: 'Cajera · Turno mañana', iniciales: 'AR' };
 
+/**
+ * Contraseña de acceso (demo). Hardcodeada a propósito para bloquear el inicio.
+ * OJO: esto NO es seguridad real — el valor viaja al navegador y cualquiera puede
+ * verlo en el bundle. Sirve solo para una demo/kiosko. Para producción, validar
+ * contra el backend y nunca guardar contraseñas en el cliente.
+ */
+const CLAVE_ACCESO = 'admin123';
+
 /** Saludo según la hora, para darle calidez al inicio de sesión. */
 function saludo(): string {
   const h = new Date().getHours();
@@ -45,8 +53,13 @@ export function LoginPage() {
     }
 
     setCargando(true);
-    // Simulamos la llamada al backend; en la demo cualquier credencial es válida.
+    // Simulamos la llamada al backend y validamos la contraseña de acceso.
     setTimeout(() => {
+      if (clave !== CLAVE_ACCESO) {
+        setError('Contraseña incorrecta.');
+        setCargando(false);
+        return;
+      }
       login(USUARIO_DEMO);
       navigate(destino, { replace: true });
     }, 600);
