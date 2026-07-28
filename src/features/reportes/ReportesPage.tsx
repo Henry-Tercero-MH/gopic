@@ -1,4 +1,4 @@
-import { FileDown, FileSpreadsheet, TrendingUp, TrendingDown, Scale } from 'lucide-react';
+import { FileDown, FileSpreadsheet, TrendingUp, TrendingDown, Scale, Trophy } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -7,7 +7,13 @@ import { formatCurrency } from '@/lib/format';
 import { useToast } from '@/lib/toast';
 import { exportarCSV } from '@/lib/exportar';
 import { cn } from '@/lib/cn';
-import { ventasPorDia, ventasPorCategoria, rentabilidadProductos, gastosSeed } from '@/mock/data';
+import {
+  ventasPorDia,
+  ventasPorCategoria,
+  rentabilidadProductos,
+  gastosSeed,
+  ventasPorEmpleadoSeed,
+} from '@/mock/data';
 
 const barColors = ['bg-brand-500', 'bg-action-500', 'bg-accent-400', 'bg-info', 'bg-brand-300'];
 
@@ -24,6 +30,20 @@ export function ReportesPage() {
   const utilidad = INGRESOS_MES - gastosMes;
   const margenNeto = ((utilidad / INGRESOS_MES) * 100).toFixed(1);
 
+  // Gastos agrupados por categoría (desglose para controlar la salida de dinero).
+  const gastosPorCategoria = Object.entries(
+    gastosSeed.reduce<Record<string, number>>((acc, g) => {
+      acc[g.categoria] = (acc[g.categoria] ?? 0) + g.monto;
+      return acc;
+    }, {}),
+  )
+    .map(([categoria, monto]) => ({ categoria, monto, pct: (monto / gastosMes) * 100 }))
+    .sort((a, b) => b.monto - a.monto);
+
+  // Personal que más vendió en el turno, ordenado.
+  const topVendedores = [...ventasPorEmpleadoSeed].sort((a, b) => b.monto - a.monto);
+  const maxVendedor = Math.max(...topVendedores.map((v) => v.monto));
+
   function exportarExcel() {
     exportarCSV(
       'rentabilidad-productos',
@@ -36,6 +56,15 @@ export function ReportesPage() {
   function exportarPDF() {
     toast.info('Abriendo vista de impresión…');
     setTimeout(() => window.print(), 300);
+  }
+
+  function exportarGastos() {
+    exportarCSV(
+      'gastos-por-categoria',
+      ['Categoría', 'Monto', '% del total'],
+      gastosPorCategoria.map((g) => [g.categoria, g.monto, `${g.pct.toFixed(1)}%`]),
+    );
+    toast.exito('Gastos por categoría exportados como CSV.');
   }
 
   return (
@@ -134,6 +163,71 @@ export function ReportesPage() {
                 </div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-sunk">
                   <div className={`h-full rounded-full ${barColors[i % barColors.length]}`} style={{ width: `${c.pct}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Personal que más vendió en el turno */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2">
+            <Trophy size={18} className="text-accent-600" />
+            <h2 className="font-display text-lg font-semibold text-text">Más vendieron en el turno</h2>
+          </div>
+          <ul className="mt-4 space-y-3">
+            {topVendedores.map((v, i) => (
+              <li key={v.empleadoId} className="flex items-center gap-3">
+                <span className="num w-4 shrink-0 text-center text-sm font-semibold text-text-muted">{i + 1}</span>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+                  {v.iniciales}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium text-text">{v.nombre}</span>
+                    <span className="num shrink-0 text-sm font-semibold text-text">{formatCurrency(v.monto)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-sunk">
+                      <div className="h-full rounded-full bg-action-500" style={{ width: `${(v.monto / maxVendedor) * 100}%` }} />
+                    </div>
+                    <span className="num shrink-0 text-xs text-text-muted">{v.tickets} tickets</span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        {/* Gastos del mes por categoría */}
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-display text-lg font-semibold text-text">Gastos por categoría</h2>
+            <div className="flex items-center gap-2">
+              <span className="num text-sm font-semibold text-danger">{formatCurrency(gastosMes)}</span>
+              <button
+                onClick={exportarGastos}
+                aria-label="Descargar gastos por categoría"
+                title="Descargar CSV"
+                className="grid h-8 w-8 place-items-center rounded-md border border-border text-text-muted hover:bg-surface-sunk hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-500"
+              >
+                <FileSpreadsheet size={16} />
+              </button>
+            </div>
+          </div>
+          <ul className="mt-4 space-y-3">
+            {gastosPorCategoria.map((g, i) => (
+              <li key={g.categoria}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-text">{g.categoria}</span>
+                  <span className="num text-text-muted">
+                    {formatCurrency(g.monto)} · {g.pct.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-sunk">
+                  <div className={`h-full rounded-full ${barColors[i % barColors.length]}`} style={{ width: `${g.pct}%` }} />
                 </div>
               </li>
             ))}

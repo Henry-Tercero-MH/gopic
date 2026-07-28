@@ -6,10 +6,14 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
+/** Perfil de permisos. `admin` ve todo; `colaborador` no ve costos/utilidad ni ajustes sensibles. */
+export type Perfil = 'admin' | 'colaborador';
+
 export interface SessionUser {
   nombre: string;
   rol: string;
   iniciales: string;
+  perfil: Perfil;
 }
 
 interface AuthContextValue {
@@ -55,6 +59,19 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
+/** true si la sesión actual es de un administrador. */
+export function useEsAdmin(): boolean {
+  return useAuth().user?.perfil === 'admin';
+}
+
+/**
+ * Muestra `children` solo a administradores. Para colaboradores renderiza `fallback`
+ * (por defecto nada). Útil para ocultar costos, utilidad y ajustes sensibles.
+ */
+export function SoloAdmin({ children, fallback = null }: { children: ReactNode; fallback?: ReactNode }) {
+  return <>{useEsAdmin() ? children : fallback}</>;
+}
+
 /** Protege las rutas privadas; redirige a /login conservando el destino. */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -64,4 +81,13 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   return <>{children}</>;
+}
+
+/**
+ * Protege rutas solo-admin. Un colaborador que llegue por URL directa se
+ * redirige al Dashboard. (UX/organización, no seguridad: en producción el
+ * backend es quien debe negar el acceso a los datos.)
+ */
+export function RequireAdmin({ children }: { children: ReactNode }) {
+  return useEsAdmin() ? <>{children}</> : <Navigate to="/" replace />;
 }

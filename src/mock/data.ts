@@ -356,6 +356,9 @@ export const ventasPorHora = [
 /* ---- Inventario ---- */
 export type NivelStock = 'ok' | 'bajo' | 'critico';
 
+/** Etapa del insumo en la cadena de producción. */
+export type TipoInsumo = 'materia_prima' | 'elaborado' | 'terminado';
+
 export interface Insumo {
   id: string;
   nombre: string;
@@ -365,19 +368,29 @@ export interface Insumo {
   minimo: number;
   costoUnitario: number;
   nivel: NivelStock;
+  /** Etapa de producción. Si falta, se asume materia prima. */
+  tipo?: TipoInsumo;
 }
 
 export const insumos: Insumo[] = [
-  { id: 'i-1', nombre: 'Carne de res (molida)', categoria: 'Cárnicos', existencia: 3, unidad: 'kg', minimo: 8, costoUnitario: 62, nivel: 'critico' },
-  { id: 'i-2', nombre: 'Papa', categoria: 'Verduras', existencia: 6, unidad: 'kg', minimo: 15, costoUnitario: 7, nivel: 'critico' },
-  { id: 'i-3', nombre: 'Pan de hamburguesa', categoria: 'Panadería', existencia: 40, unidad: 'pz', minimo: 100, costoUnitario: 2.5, nivel: 'bajo' },
-  { id: 'i-4', nombre: 'Queso amarillo', categoria: 'Lácteos', existencia: 4.5, unidad: 'kg', minimo: 3, costoUnitario: 55, nivel: 'ok' },
-  { id: 'i-5', nombre: 'Alitas de pollo', categoria: 'Cárnicos', existencia: 9, unidad: 'kg', minimo: 5, costoUnitario: 38, nivel: 'ok' },
-  { id: 'i-6', nombre: 'Vasos 16 oz', categoria: 'Desechables', existencia: 85, unidad: 'pz', minimo: 150, costoUnitario: 0.9, nivel: 'bajo' },
-  { id: 'i-7', nombre: 'Salchicha', categoria: 'Cárnicos', existencia: 7, unidad: 'kg', minimo: 4, costoUnitario: 34, nivel: 'ok' },
-  { id: 'i-8', nombre: 'Aceite para freír', categoria: 'Abarrotes', existencia: 18, unidad: 'L', minimo: 8, costoUnitario: 22, nivel: 'ok' },
-  { id: 'i-9', nombre: 'Salsa BBQ', categoria: 'Salsas', existencia: 6, unidad: 'L', minimo: 3, costoUnitario: 28, nivel: 'ok' },
-  { id: 'i-10', nombre: 'Helado de vainilla', categoria: 'Lácteos', existencia: 5, unidad: 'L', minimo: 3, costoUnitario: 30, nivel: 'ok' },
+  { id: 'i-1', nombre: 'Carne de res (molida)', categoria: 'Cárnicos', existencia: 3, unidad: 'kg', minimo: 8, costoUnitario: 62, nivel: 'critico', tipo: 'materia_prima' },
+  { id: 'i-2', nombre: 'Papa', categoria: 'Verduras', existencia: 6, unidad: 'kg', minimo: 15, costoUnitario: 7, nivel: 'critico', tipo: 'materia_prima' },
+  { id: 'i-3', nombre: 'Pan de hamburguesa', categoria: 'Panadería', existencia: 40, unidad: 'pz', minimo: 100, costoUnitario: 2.5, nivel: 'bajo', tipo: 'materia_prima' },
+  { id: 'i-4', nombre: 'Queso amarillo', categoria: 'Lácteos', existencia: 4.5, unidad: 'kg', minimo: 3, costoUnitario: 55, nivel: 'ok', tipo: 'materia_prima' },
+  { id: 'i-5', nombre: 'Alitas de pollo', categoria: 'Cárnicos', existencia: 9, unidad: 'kg', minimo: 5, costoUnitario: 38, nivel: 'ok', tipo: 'materia_prima' },
+  { id: 'i-6', nombre: 'Vasos 16 oz', categoria: 'Desechables', existencia: 85, unidad: 'pz', minimo: 150, costoUnitario: 0.9, nivel: 'bajo', tipo: 'materia_prima' },
+  { id: 'i-7', nombre: 'Salchicha', categoria: 'Cárnicos', existencia: 7, unidad: 'kg', minimo: 4, costoUnitario: 34, nivel: 'ok', tipo: 'materia_prima' },
+  { id: 'i-8', nombre: 'Aceite para freír', categoria: 'Abarrotes', existencia: 18, unidad: 'L', minimo: 8, costoUnitario: 22, nivel: 'ok', tipo: 'materia_prima' },
+  { id: 'i-9', nombre: 'Salsa BBQ', categoria: 'Salsas', existencia: 6, unidad: 'L', minimo: 3, costoUnitario: 28, nivel: 'ok', tipo: 'materia_prima' },
+  { id: 'i-10', nombre: 'Helado de vainilla', categoria: 'Lácteos', existencia: 5, unidad: 'L', minimo: 3, costoUnitario: 30, nivel: 'ok', tipo: 'materia_prima' },
+  /* ---- Materia prima que se reprocesa ---- */
+  { id: 'i-11', nombre: 'Fruta de temporada (granel)', categoria: 'Frutas', existencia: 24, unidad: 'kg', minimo: 10, costoUnitario: 12, nivel: 'ok', tipo: 'materia_prima' },
+  { id: 'i-12', nombre: 'Gomitas enchiladas (granel)', categoria: 'Dulces', existencia: 8, unidad: 'kg', minimo: 3, costoUnitario: 45, nivel: 'ok', tipo: 'materia_prima' },
+  /* ---- Producto elaborado (derivado por reproceso) ---- */
+  { id: 'i-13', nombre: 'Fruta congelada (bolsa 250g)', categoria: 'Frutas', existencia: 6, unidad: 'bolsa', minimo: 20, costoUnitario: 4, nivel: 'critico', tipo: 'elaborado' },
+  { id: 'i-14', nombre: 'Aderezo de la casa', categoria: 'Salsas', existencia: 3, unidad: 'L', minimo: 2, costoUnitario: 18, nivel: 'ok', tipo: 'elaborado' },
+  /* ---- Producto terminado (listo para vender) ---- */
+  { id: 'i-15', nombre: 'Gomitas enchiladas (bolsita 80g)', categoria: 'Dulces', existencia: 14, unidad: 'bolsita', minimo: 30, costoUnitario: 6, nivel: 'bajo', tipo: 'terminado' },
 ];
 
 export interface MovimientoKardex {
@@ -630,4 +643,22 @@ export const empleadosSeed: Empleado[] = [
   { id: 'e-5', nombre: 'Sofía Herrera', puesto: 'Almacenista', telefono: '+502 5555 5050', turno: 'Mañana · 07:00–15:00', iniciales: 'SH', estado: 'salio', entrada: '07:00', salida: '13:20' },
   { id: 'e-6', nombre: 'Diego Morales', puesto: 'Mesero', telefono: '+502 5555 6060', turno: 'Tarde · 14:00–22:00', iniciales: 'DM', estado: 'sin_marcar', entrada: null, salida: null },
   { id: 'e-7', nombre: 'Elena Castro', puesto: 'Administrador', telefono: '+502 5555 7070', turno: 'Completo · 08:00–17:00', iniciales: 'EC', estado: 'trabajando', entrada: '07:52', salida: null },
+];
+
+/* ---- Ventas por colaborador en el turno (para Reportes) ---- */
+export interface VentaEmpleado {
+  empleadoId: string;
+  nombre: string;
+  iniciales: string;
+  /** Nº de tickets cerrados por esta persona en el turno. */
+  tickets: number;
+  /** Monto total vendido en el turno (Q). */
+  monto: number;
+}
+
+export const ventasPorEmpleadoSeed: VentaEmpleado[] = [
+  { empleadoId: 'e-1', nombre: 'Ana Rodríguez', iniciales: 'AR', tickets: 34, monto: 4820 },
+  { empleadoId: 'e-2', nombre: 'Luis Gómez', iniciales: 'LG', tickets: 27, monto: 3610 },
+  { empleadoId: 'e-6', nombre: 'Diego Morales', iniciales: 'DM', tickets: 19, monto: 2480 },
+  { empleadoId: 'e-5', nombre: 'Sofía Herrera', iniciales: 'SH', tickets: 12, monto: 1290 },
 ];

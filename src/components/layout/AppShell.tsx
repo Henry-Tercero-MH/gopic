@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, ScrollRestoration, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { RUTAS } from '@/lib/rutas';
 import { useAuth } from '@/lib/auth';
 import { useOperacion } from '@/lib/operacion';
 import { aplicarTema, leerTema } from '@/lib/theme';
@@ -37,6 +38,8 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   soon?: boolean;
+  /** Solo visible para administradores (finanzas / sistema). */
+  soloAdmin?: boolean;
 }
 
 interface NavGroup {
@@ -48,31 +51,31 @@ const navGroups: NavGroup[] = [
   {
     titulo: 'Operación',
     items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/pos', label: 'Punto de venta', icon: ReceiptText },
-      { to: '/caja', label: 'Caja', icon: Wallet },
-      { to: '/mesas', label: 'Mesas', icon: Utensils },
-      { to: '/kds', label: 'Cocina / Barra', icon: ChefHat },
+      { to: RUTAS.dashboard, label: 'Dashboard', icon: LayoutDashboard },
+      { to: RUTAS.pos, label: 'Punto de venta', icon: ReceiptText },
+      { to: RUTAS.caja, label: 'Caja', icon: Wallet },
+      { to: RUTAS.mesas, label: 'Mesas', icon: Utensils },
+      { to: RUTAS.kds, label: 'Cocina / Barra', icon: ChefHat },
     ],
   },
   {
     titulo: 'Gestión',
     items: [
-      { to: '/personal', label: 'Personal', icon: Contact },
-      { to: '/clientes', label: 'Clientes', icon: Users },
-      { to: '/inventario', label: 'Inventario', icon: Package },
-      { to: '/catalogos', label: 'Catálogos', icon: Library },
-      { to: '/recetario', label: 'Recetario', icon: BookOpen },
-      { to: '/compras', label: 'Compras', icon: ShoppingCart },
-      { to: '/gastos', label: 'Gastos', icon: TrendingDown },
-      { to: '/promociones', label: 'Promociones', icon: Tag },
+      { to: RUTAS.personal, label: 'Personal', icon: Contact },
+      { to: RUTAS.clientes, label: 'Clientes', icon: Users },
+      { to: RUTAS.inventario, label: 'Inventario', icon: Package },
+      { to: RUTAS.catalogos, label: 'Catálogos', icon: Library },
+      { to: RUTAS.recetario, label: 'Recetario', icon: BookOpen },
+      { to: RUTAS.compras, label: 'Compras', icon: ShoppingCart, soloAdmin: true },
+      { to: RUTAS.gastos, label: 'Gastos', icon: TrendingDown, soloAdmin: true },
+      { to: RUTAS.promociones, label: 'Promociones', icon: Tag },
     ],
   },
   {
     titulo: 'Análisis y sistema',
     items: [
-      { to: '/reportes', label: 'Reportes', icon: BarChart3 },
-      { to: '/config', label: 'Configuración', icon: Settings },
+      { to: RUTAS.reportes, label: 'Reportes', icon: BarChart3, soloAdmin: true },
+      { to: RUTAS.config, label: 'Configuración', icon: Settings, soloAdmin: true },
     ],
   },
 ];
@@ -83,6 +86,12 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const { cajaAbierta, fondoCaja } = useOperacion();
   const navigate = useNavigate();
+
+  // Menú según el perfil: el colaborador no ve secciones de finanzas / sistema.
+  const esAdmin = user?.perfil === 'admin';
+  const grupos = navGroups
+    .map((g) => ({ ...g, items: g.items.filter((i) => esAdmin || !i.soloAdmin) }))
+    .filter((g) => g.items.length > 0);
 
   const [dark, setDark] = useState(() => leerTema() === 'dark');
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
@@ -98,7 +107,7 @@ export function AppShell() {
 
   function cerrarSesion() {
     logout();
-    navigate('/login', { replace: true });
+    navigate(RUTAS.login, { replace: true });
   }
 
   return (
@@ -143,7 +152,7 @@ export function AppShell() {
         </div>
 
         <nav className="flex-1 overflow-y-auto scroll-thin px-2 py-2">
-          {navGroups.map((grupo, gi) => (
+          {grupos.map((grupo, gi) => (
             <div key={grupo.titulo} className={cn(gi > 0 && (collapsed ? 'mt-2 border-t border-border pt-2' : 'mt-4'))}>
               {!collapsed && (
                 <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
@@ -173,7 +182,7 @@ export function AppShell() {
                     <NavLink
                       key={item.to}
                       to={item.to}
-                      end={item.to === '/'}
+                      end={item.to === RUTAS.dashboard}
                       title={collapsed ? item.label : undefined}
                       className={({ isActive }) =>
                         cn(
@@ -265,6 +274,7 @@ export function AppShell() {
         <main className="min-h-0 flex-1 overflow-auto scroll-thin">
           <Outlet />
         </main>
+        <ScrollRestoration />
       </div>
 
       <Drawer open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} side="left" ariaLabel="Menú principal" className="w-[86vw] max-w-xs">
@@ -289,7 +299,7 @@ export function AppShell() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-3">
-          {navGroups.map((grupo, gi) => (
+          {grupos.map((grupo, gi) => (
             <div key={grupo.titulo} className={cn('mb-3', gi > 0 && 'mt-2')}>
               <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
                 {grupo.titulo}
@@ -311,7 +321,7 @@ export function AppShell() {
                     <NavLink
                       key={item.to}
                       to={item.to}
-                      end={item.to === '/'}
+                      end={item.to === RUTAS.dashboard}
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
                         cn(

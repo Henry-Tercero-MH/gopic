@@ -6,18 +6,21 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
+import { useEsAdmin } from '@/lib/auth';
 import { recetas } from '@/mock/data';
 
 export function RecetarioPage() {
   const [seleccionada, setSeleccionada] = useState(recetas[0].id);
   const receta = recetas.find((r) => r.id === seleccionada)!;
   const margen = Math.round(((receta.precioVenta - receta.costo) / receta.precioVenta) * 100);
+  // El colaborador ve la receta (ingredientes), no los costos ni la utilidad.
+  const esAdmin = useEsAdmin();
 
   return (
     <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
-        title="Recetario y costeo"
-        subtitle={`${recetas.length} recetas · costo calculado desde inventario`}
+        title={esAdmin ? 'Recetario y costeo' : 'Recetario'}
+        subtitle={esAdmin ? `${recetas.length} recetas · costo calculado desde inventario` : `${recetas.length} recetas`}
         actions={
           <Button>
             <Plus size={18} /> Nueva receta
@@ -43,10 +46,11 @@ export function RecetarioPage() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-text">{r.producto}</div>
                   <div className="num text-xs text-text-muted">
-                    Costo {formatCurrency(r.costo)} · {r.detalle.length} insumos
+                    {esAdmin && <>Costo {formatCurrency(r.costo)} · </>}
+                    {r.detalle.length} insumos
                   </div>
                 </div>
-                <Badge tone={m >= 70 ? 'success' : 'warning'}>{m}%</Badge>
+                {esAdmin && <Badge tone={m >= 70 ? 'success' : 'warning'}>{m}%</Badge>}
               </button>
             );
           })}
@@ -54,28 +58,30 @@ export function RecetarioPage() {
 
         {/* Detalle de la receta */}
         <div className="space-y-4 lg:col-span-2">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Card className="p-4">
-              <div className="text-sm text-text-muted">Precio de venta</div>
-              <div className="num mt-1 text-xl font-semibold text-text">{formatCurrency(receta.precioVenta)}</div>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-text-muted">Costo</div>
-              <div className="num mt-1 text-xl font-semibold text-brand-700">{formatCurrency(receta.costo)}</div>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-text-muted">Utilidad</div>
-              <div className="num mt-1 text-xl font-semibold text-success">
-                {formatCurrency(receta.precioVenta - receta.costo)}
-              </div>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-text-muted">Margen</div>
-              <div className="num mt-1 inline-flex items-center gap-1 text-xl font-semibold text-action-700">
-                <TrendingUp size={16} /> {margen}%
-              </div>
-            </Card>
-          </div>
+          {esAdmin && (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Card className="p-4">
+                <div className="text-sm text-text-muted">Precio de venta</div>
+                <div className="num mt-1 text-xl font-semibold text-text">{formatCurrency(receta.precioVenta)}</div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-sm text-text-muted">Costo</div>
+                <div className="num mt-1 text-xl font-semibold text-brand-700">{formatCurrency(receta.costo)}</div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-sm text-text-muted">Utilidad</div>
+                <div className="num mt-1 text-xl font-semibold text-success">
+                  {formatCurrency(receta.precioVenta - receta.costo)}
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-sm text-text-muted">Margen</div>
+                <div className="num mt-1 inline-flex items-center gap-1 text-xl font-semibold text-action-700">
+                  <TrendingUp size={16} /> {margen}%
+                </div>
+              </Card>
+            </div>
+          )}
 
           <Card className="p-4">
             <div className="flex items-center gap-2">
@@ -91,7 +97,7 @@ export function RecetarioPage() {
                     <th className="pb-2 font-medium">Insumo</th>
                     <th className="pb-2 text-right font-medium">Cantidad</th>
                     <th className="pb-2 text-right font-medium">Merma</th>
-                    <th className="pb-2 text-right font-medium">Costo</th>
+                    {esAdmin && <th className="pb-2 text-right font-medium">Costo</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -100,15 +106,16 @@ export function RecetarioPage() {
                       <td className="py-2 font-medium text-text">{it.insumo}</td>
                       <td className="num py-2 text-right text-text-muted">{it.cantidad}</td>
                       <td className="num py-2 text-right text-text-muted">{it.merma}</td>
-                      <td className="num py-2 text-right font-semibold text-text">{formatCurrency(it.costo)}</td>
+                      {esAdmin && <td className="num py-2 text-right font-semibold text-text">{formatCurrency(it.costo)}</td>}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <p className="mt-3 text-xs text-text-muted">
-              El costo se recalcula automáticamente cuando cambia el precio de un insumo en inventario.
-              Al facturar, estos insumos se descuentan por explosión de receta.
+              {esAdmin
+                ? 'El costo se recalcula automáticamente cuando cambia el precio de un insumo en inventario. Al facturar, estos insumos se descuentan por explosión de receta.'
+                : 'Al facturar, estos insumos se descuentan del inventario por explosión de receta.'}
             </p>
           </Card>
         </div>

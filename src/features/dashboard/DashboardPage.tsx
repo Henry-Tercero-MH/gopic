@@ -2,6 +2,8 @@ import { Wallet, Receipt, Repeat, Utensils, Store, ShoppingBag } from 'lucide-re
 import { Card } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
+import { UtilidadNetaCard } from './UtilidadNetaCard';
+import { SoloAdmin } from '@/lib/auth';
 import { formatCurrency } from '@/lib/format';
 import { useOperacion, type TipoVenta } from '@/lib/operacion';
 import { kpis, topProductos, alertasStock, ventasPorHora } from '@/mock/data';
@@ -69,6 +71,11 @@ export function DashboardPage() {
           hint={`${Math.round((mesasOcupadas / mesasTotales) * 100)}% de ocupación`}
         />
       </div>
+
+      {/* Utilidad neta del día — solo administradores (contiene costos y márgenes) */}
+      <SoloAdmin>
+        <UtilidadNetaCard ventasHoy={ventasHoy} />
+      </SoloAdmin>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Ventas por hora */}

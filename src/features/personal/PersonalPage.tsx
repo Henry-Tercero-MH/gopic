@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   UserPlus,
   Search,
@@ -38,6 +38,26 @@ const iniciales = (n: string) =>
 const horaActual = () =>
   new Date().toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
 
+/** Convierte "HH:MM" a minutos desde medianoche; null si no hay hora. */
+function minutosDeHora(hhmm: string | null): number | null {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  return Number.isNaN(h) || Number.isNaN(m) ? null : h * 60 + m;
+}
+
+/** Minutos trabajados hoy: si sigue en turno cuenta hasta `ahora`; si salió, hasta su salida. */
+function minutosTrabajados(e: Empleado, ahoraMin: number): number {
+  const entrada = minutosDeHora(e.entrada);
+  if (entrada == null) return 0;
+  const fin = e.estado === 'trabajando' ? ahoraMin : minutosDeHora(e.salida) ?? entrada;
+  return Math.max(0, fin - entrada);
+}
+
+/** Formatea minutos como "H:MM". */
+function formatHoras(min: number): string {
+  return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`;
+}
+
 export function PersonalPage() {
   const [empleados, setEmpleados] = useState<Empleado[]>(empleadosSeed);
   const [busqueda, setBusqueda] = useState('');
@@ -54,6 +74,18 @@ export function PersonalPage() {
 
   const enTurno = empleados.filter((e) => e.estado === 'trabajando').length;
   const ausentes = empleados.filter((e) => e.estado === 'sin_marcar').length;
+
+  // Reloj a resolución de minuto: mantiene vivas las horas de quien está en turno.
+  const [ahoraMin, setAhoraMin] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = new Date();
+      setAhoraMin(d.getHours() * 60 + d.getMinutes());
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const horasHoyTotal = empleados.reduce((s, e) => s + minutosTrabajados(e, ahoraMin), 0);
 
   /** Marca la entrada del empleado (registra la hora y lo pone "en turno"). */
   function marcarEntrada(e: Empleado) {
@@ -106,7 +138,7 @@ export function PersonalPage() {
         <Kpi icon={Users} label="Total del personal" valor={String(empleados.length)} tono="brand" />
         <Kpi icon={UserCheck} label="En turno ahora" valor={String(enTurno)} tono="success" />
         <Kpi icon={UserX} label="Sin marcar" valor={String(ausentes)} tono="accent" />
-        <Kpi icon={Clock} label="Turnos activos" valor="2" tono="info" hint="mañana y tarde" />
+        <Kpi icon={Clock} label="Horas trabajadas hoy" valor={formatHoras(horasHoyTotal)} tono="info" hint="suma del personal" />
       </div>
 
       <Card className="overflow-hidden">
@@ -134,6 +166,7 @@ export function PersonalPage() {
                   <th className="px-4 py-2.5 font-semibold">Turno</th>
                   <th className="px-4 py-2.5 font-semibold">Entrada</th>
                   <th className="px-4 py-2.5 font-semibold">Salida</th>
+                  <th className="px-4 py-2.5 font-semibold">Horas hoy</th>
                   <th className="px-4 py-2.5 font-semibold">Estado</th>
                   <th className="px-4 py-2.5 text-right font-semibold">Marcaje</th>
                 </tr>
@@ -153,6 +186,15 @@ export function PersonalPage() {
                     <td className="px-4 py-3 text-text-muted">{e.turno}</td>
                     <td className="num px-4 py-3 text-text">{e.entrada ?? '—'}</td>
                     <td className="num px-4 py-3 text-text">{e.salida ?? '—'}</td>
+                    <td className="num px-4 py-3">
+                      {e.entrada ? (
+                        <span className={cn('font-medium', e.estado === 'trabajando' ? 'text-success' : 'text-text')}>
+                          {formatHoras(minutosTrabajados(e, ahoraMin))}
+                        </span>
+                      ) : (
+                        <span className="text-text-muted">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <Badge tone={estadoMarcaje[e.estado].tone}>{estadoMarcaje[e.estado].label}</Badge>
                     </td>

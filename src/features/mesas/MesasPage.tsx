@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
+import { RUTAS } from '@/lib/rutas';
 import { useOperacion, type MesaInput } from '@/lib/operacion';
 import { useToast } from '@/lib/toast';
 import { useAuth } from '@/lib/auth';
@@ -43,7 +44,7 @@ export function MesasPage() {
       abrirMesa(mesa.id, mesero);
       toast.exito(`${mesa.nombre} abierta. Toma la comanda.`);
     }
-    navigate(`/pos?mesa=${mesa.id}`);
+    navigate(`${RUTAS.pos}?mesa=${mesa.id}`);
   }
 
   function nuevaMesa() {
@@ -104,10 +105,10 @@ export function MesasPage() {
             </>
           ) : (
             <>
-              <Button variant="secondary" onClick={() => navigate('/pos?tipo=mostrador')}>
+              <Button variant="secondary" onClick={() => navigate(`${RUTAS.pos}?tipo=mostrador`)}>
                 <Store size={18} /> Venta en mostrador
               </Button>
-              <Button variant="secondary" onClick={() => navigate('/pos?tipo=llevar')}>
+              <Button variant="secondary" onClick={() => navigate(`${RUTAS.pos}?tipo=llevar`)}>
                 <ShoppingBag size={18} /> Para llevar
               </Button>
               <Button variant="secondary" onClick={() => setAdmin(true)}>

@@ -1,30 +1,16 @@
-import { StrictMode } from 'react';
+import { StrictMode, lazy, Suspense, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import { AuthProvider, RequireAuth } from '@/lib/auth';
+import { createBrowserRouter, Outlet, RouterProvider } from 'react-router-dom';
+import { AuthProvider, RequireAuth, RequireAdmin } from '@/lib/auth';
 import { ToastProvider } from '@/lib/toast';
 import { OperacionProvider } from '@/lib/operacion';
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog';
+import { PantallaCarga } from '@/components/ui/PantallaCarga';
 import { aplicarTema, leerTema } from '@/lib/theme';
 import { bloquearZoom } from '@/lib/bloquearZoom';
+import { RUTAS } from '@/lib/rutas';
 import { AppShell } from '@/components/layout/AppShell';
-import { LoginPage } from '@/features/auth/LoginPage';
-import { NotFoundPage } from '@/features/misc/NotFoundPage';
-import { DashboardPage } from '@/features/dashboard/DashboardPage';
-import { PosPage } from '@/features/pos/PosPage';
-import { CajaPage } from '@/features/caja/CajaPage';
-import { MesasPage } from '@/features/mesas/MesasPage';
-import { ClientesPage } from '@/features/clientes/ClientesPage';
-import { PersonalPage } from '@/features/personal/PersonalPage';
-import { KdsPage } from '@/features/kds/KdsPage';
-import { InventarioPage } from '@/features/inventario/InventarioPage';
-import { CatalogosPage } from '@/features/catalogos/CatalogosPage';
-import { ComprasPage } from '@/features/compras/ComprasPage';
-import { GastosPage } from '@/features/gastos/GastosPage';
-import { PromocionesPage } from '@/features/promociones/PromocionesPage';
-import { RecetarioPage } from '@/features/recetario/RecetarioPage';
-import { ReportesPage } from '@/features/reportes/ReportesPage';
-import { ConfigPage } from '@/features/config/ConfigPage';
+import { ErrorPage } from '@/features/misc/ErrorPage';
 import '@/styles/globals.css';
 
 // Aplica el tema guardado antes del primer render (afecta también al Login).
@@ -33,34 +19,58 @@ aplicarTema(leerTema());
 // Deshabilita el zoom (pellizco / doble toque) en móviles y tablets.
 bloquearZoom();
 
+/** Carga diferida de una página por su export nombrado, con fallback de Suspense. */
+function pagina(cargar: () => Promise<Record<string, ComponentType>>, nombre: string) {
+  const Comp = lazy(() => cargar().then((m) => ({ default: m[nombre] })));
+  return (
+    <Suspense fallback={<PantallaCarga />}>
+      <Comp />
+    </Suspense>
+  );
+}
+
 const router = createBrowserRouter([
-  { path: '/login', element: <LoginPage /> },
+  { path: RUTAS.login, element: pagina(() => import('@/features/auth/LoginPage'), 'LoginPage') },
+  { path: RUTAS.registro, element: pagina(() => import('@/features/auth/RegistroPage'), 'RegistroPage') },
+  { path: RUTAS.recuperar, element: pagina(() => import('@/features/auth/RecuperarPage'), 'RecuperarPage') },
+  { path: RUTAS.carta, element: pagina(() => import('@/features/menu-digital/CartaPage'), 'CartaPage') },
   {
-    path: '/',
+    path: RUTAS.dashboard,
     element: (
       <RequireAuth>
         <AppShell />
       </RequireAuth>
     ),
+    errorElement: <ErrorPage />,
     children: [
-      { index: true, element: <DashboardPage /> },
-      { path: 'pos', element: <PosPage /> },
-      { path: 'caja', element: <CajaPage /> },
-      { path: 'mesas', element: <MesasPage /> },
-      { path: 'kds', element: <KdsPage /> },
-      { path: 'clientes', element: <ClientesPage /> },
-      { path: 'personal', element: <PersonalPage /> },
-      { path: 'inventario', element: <InventarioPage /> },
-      { path: 'catalogos', element: <CatalogosPage /> },
-      { path: 'recetario', element: <RecetarioPage /> },
-      { path: 'compras', element: <ComprasPage /> },
-      { path: 'gastos', element: <GastosPage /> },
-      { path: 'promociones', element: <PromocionesPage /> },
-      { path: 'reportes', element: <ReportesPage /> },
-      { path: 'config', element: <ConfigPage /> },
+      { index: true, element: pagina(() => import('@/features/dashboard/DashboardPage'), 'DashboardPage') },
+      { path: 'pos', element: pagina(() => import('@/features/pos/PosPage'), 'PosPage') },
+      { path: 'caja', element: pagina(() => import('@/features/caja/CajaPage'), 'CajaPage') },
+      { path: 'mesas', element: pagina(() => import('@/features/mesas/MesasPage'), 'MesasPage') },
+      { path: 'kds', element: pagina(() => import('@/features/kds/KdsPage'), 'KdsPage') },
+      { path: 'clientes', element: pagina(() => import('@/features/clientes/ClientesPage'), 'ClientesPage') },
+      { path: 'personal', element: pagina(() => import('@/features/personal/PersonalPage'), 'PersonalPage') },
+      { path: 'inventario', element: pagina(() => import('@/features/inventario/InventarioPage'), 'InventarioPage') },
+      { path: 'catalogos', element: pagina(() => import('@/features/catalogos/CatalogosPage'), 'CatalogosPage') },
+      { path: 'recetario', element: pagina(() => import('@/features/recetario/RecetarioPage'), 'RecetarioPage') },
+      { path: 'promociones', element: pagina(() => import('@/features/promociones/PromocionesPage'), 'PromocionesPage') },
+      // Rutas solo-admin agrupadas bajo un único guard (Outlet), sin repetir el wrapper.
+      {
+        element: (
+          <RequireAdmin>
+            <Outlet />
+          </RequireAdmin>
+        ),
+        children: [
+          { path: 'compras', element: pagina(() => import('@/features/compras/ComprasPage'), 'ComprasPage') },
+          { path: 'gastos', element: pagina(() => import('@/features/gastos/GastosPage'), 'GastosPage') },
+          { path: 'reportes', element: pagina(() => import('@/features/reportes/ReportesPage'), 'ReportesPage') },
+          { path: 'config', element: pagina(() => import('@/features/config/ConfigPage'), 'ConfigPage') },
+        ],
+      },
     ],
   },
-  { path: '*', element: <NotFoundPage /> },
+  { path: '*', element: pagina(() => import('@/features/misc/NotFoundPage'), 'NotFoundPage') },
 ]);
 
 createRoot(document.getElementById('root')!).render(

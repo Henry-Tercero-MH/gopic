@@ -7,16 +7,21 @@ import {
   Package,
   AlertTriangle,
   DollarSign,
+  Repeat,
+  X,
+  ArrowRight,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { StatCard } from '@/components/ui/StatCard';
+import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
 import { useOperacion } from '@/lib/operacion';
-import { kardexEjemplo, type NivelStock } from '@/mock/data';
+import { kardexEjemplo, type Insumo, type NivelStock, type TipoInsumo } from '@/mock/data';
 
 const nivelBadge: Record<NivelStock, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
   ok: { label: 'En nivel', tone: 'success' },
@@ -24,15 +29,53 @@ const nivelBadge: Record<NivelStock, { label: string; tone: 'success' | 'warning
   critico: { label: 'Crítico', tone: 'danger' },
 };
 
+const tipoInfo: Record<TipoInsumo, { label: string; tone: 'neutral' | 'info' | 'success' }> = {
+  materia_prima: { label: 'Materia prima', tone: 'neutral' },
+  elaborado: { label: 'Elaborado', tone: 'info' },
+  terminado: { label: 'Terminado', tone: 'success' },
+};
+
+const tipoDe = (i: Insumo): TipoInsumo => i.tipo ?? 'materia_prima';
+
+/** Deriva el nivel de stock a partir de la existencia y el mínimo. */
+function nivelDe(existencia: number, minimo: number): NivelStock {
+  if (existencia <= minimo * 0.5) return 'critico';
+  if (existencia <= minimo) return 'bajo';
+  return 'ok';
+}
+
 export function InventarioPage() {
-  const { insumos } = useOperacion();
+  const { insumos, setInsumos } = useOperacion();
+  const toast = useToast();
   const [q, setQ] = useState('');
   const [seleccionado, setSeleccionado] = useState(insumos[0]?.id ?? '');
+  const [reprocesoAbierto, setReprocesoAbierto] = useState(false);
+
+  /** Reproceso: descuenta del origen y suma al destino, recalculando niveles. */
+  function reprocesar(origenId: string, consumo: number, destinoId: string, produccion: number) {
+    setInsumos(
+      insumos.map((i) => {
+        if (i.id === origenId) {
+          const existencia = Math.max(0, i.existencia - consumo);
+          return { ...i, existencia, nivel: nivelDe(existencia, i.minimo) };
+        }
+        if (i.id === destinoId) {
+          const existencia = i.existencia + produccion;
+          return { ...i, existencia, nivel: nivelDe(existencia, i.minimo) };
+        }
+        return i;
+      }),
+    );
+    const origen = insumos.find((i) => i.id === origenId);
+    const destino = insumos.find((i) => i.id === destinoId);
+    setReprocesoAbierto(false);
+    toast.exito(`Reproceso: −${consumo} ${origen?.unidad} → +${produccion} ${destino?.unidad} de ${destino?.nombre}.`);
+  }
 
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
     return insumos.filter((i) => !t || i.nombre.toLowerCase().includes(t) || i.categoria.toLowerCase().includes(t));
-  }, [q]);
+  }, [insumos, q]);
 
   const valorTotal = insumos.reduce((s, i) => s + i.existencia * i.costoUnitario, 0);
   const criticos = insumos.filter((i) => i.nivel === 'critico').length;
@@ -45,6 +88,9 @@ export function InventarioPage() {
         subtitle={`${insumos.length} insumos registrados`}
         actions={
           <>
+            <Button variant="secondary" onClick={() => setReprocesoAbierto(true)}>
+              <Repeat size={18} /> Reproceso
+            </Button>
             <Button variant="secondary">
               <ClipboardList size={18} /> Conteo físico
             </Button>
@@ -99,7 +145,10 @@ export function InventarioPage() {
                   >
                     <td className="p-3">
                       <div className="font-medium text-text">{i.nombre}</div>
-                      <div className="text-xs text-text-muted">{i.categoria}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <Badge tone={tipoInfo[tipoDe(i)].tone}>{tipoInfo[tipoDe(i)].label}</Badge>
+                        <span className="text-xs text-text-muted">{i.categoria}</span>
+                      </div>
                     </td>
                     <td className="num p-3 text-right font-semibold text-text">
                       {i.existencia} {i.unidad}
@@ -145,6 +194,126 @@ export function InventarioPage() {
           </ul>
         </Card>
       </div>
+
+      {reprocesoAbierto && (
+        <ReprocesoModal insumos={insumos} onCerrar={() => setReprocesoAbierto(false)} onReprocesar={reprocesar} />
+      )}
     </div>
+  );
+}
+
+function ReprocesoModal({
+  insumos,
+  onCerrar,
+  onReprocesar,
+}: {
+  insumos: Insumo[];
+  onCerrar: () => void;
+  onReprocesar: (origenId: string, consumo: number, destinoId: string, produccion: number) => void;
+}) {
+  // Origen sugerido: materia prima; destino: un elaborado/terminado distinto.
+  const origenes = insumos.filter((i) => tipoDe(i) === 'materia_prima');
+  const destinos = insumos.filter((i) => tipoDe(i) !== 'materia_prima');
+
+  const [origenId, setOrigenId] = useState(origenes[0]?.id ?? insumos[0]?.id ?? '');
+  const [destinoId, setDestinoId] = useState(destinos[0]?.id ?? '');
+  const [consumoStr, setConsumoStr] = useState('');
+  const [produccionStr, setProduccionStr] = useState('');
+
+  const origen = insumos.find((i) => i.id === origenId);
+  const destino = insumos.find((i) => i.id === destinoId);
+  const consumo = parseFloat(consumoStr) || 0;
+  const produccion = parseFloat(produccionStr) || 0;
+
+  const excedeExistencia = !!origen && consumo > origen.existencia;
+  const mismo = origenId === destinoId;
+  const valido = origen && destino && consumo > 0 && produccion > 0 && !excedeExistencia && !mismo;
+
+  const selectCls =
+    'mt-1 h-11 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none focus:ring-2 focus:ring-action-500/40';
+  const inputCls =
+    'num mt-1 h-11 w-full rounded-md border border-border bg-surface-alt px-3 text-right text-base font-semibold text-text focus:border-action-500 focus:outline-none focus:ring-2 focus:ring-action-500/40';
+
+  return (
+    <Modal onClose={onCerrar} ariaLabel="Reproceso de inventario" className="w-full max-w-md">
+      <header className="flex items-center justify-between border-b border-border p-4">
+        <div>
+          <h3 className="inline-flex items-center gap-2 font-display text-lg font-semibold text-text">
+            <Repeat size={18} className="text-text-muted" /> Reproceso
+          </h3>
+          <p className="text-sm text-text-muted">Convierte un insumo en su derivado (p. ej. granel → bolsas).</p>
+        </div>
+        <button
+          onClick={onCerrar}
+          aria-label="Cerrar"
+          className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-500"
+        >
+          <X size={18} />
+        </button>
+      </header>
+
+      <div className="space-y-4 p-4">
+        {/* Origen */}
+        <div>
+          <label htmlFor="rp-origen" className="text-sm font-medium text-text">Sale del inventario</label>
+          <select id="rp-origen" value={origenId} onChange={(e) => setOrigenId(e.target.value)} className={selectCls}>
+            {insumos.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.nombre} · {i.existencia} {i.unidad}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            value={consumoStr}
+            onChange={(e) => setConsumoStr(e.target.value)}
+            placeholder={`Cantidad a consumir${origen ? ` (${origen.unidad})` : ''}`}
+            className={inputCls}
+          />
+          {excedeExistencia && (
+            <p className="mt-1 text-xs font-medium text-danger">
+              Solo hay {origen?.existencia} {origen?.unidad} disponibles.
+            </p>
+          )}
+        </div>
+
+        <div className="flex justify-center">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-surface-sunk text-text-muted">
+            <ArrowRight size={16} className="rotate-90" />
+          </span>
+        </div>
+
+        {/* Destino */}
+        <div>
+          <label htmlFor="rp-destino" className="text-sm font-medium text-text">Entra al inventario</label>
+          <select id="rp-destino" value={destinoId} onChange={(e) => setDestinoId(e.target.value)} className={selectCls}>
+            {destinos.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.nombre} · {tipoInfo[tipoDe(i)].label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            value={produccionStr}
+            onChange={(e) => setProduccionStr(e.target.value)}
+            placeholder={`Cantidad producida${destino ? ` (${destino.unidad})` : ''}`}
+            className={inputCls}
+          />
+          {mismo && <p className="mt-1 text-xs font-medium text-danger">El origen y el destino deben ser distintos.</p>}
+        </div>
+      </div>
+
+      <footer className="grid grid-cols-2 gap-2 border-t border-border p-4">
+        <Button variant="secondary" size="lg" onClick={onCerrar}>Cancelar</Button>
+        <Button size="lg" disabled={!valido} onClick={() => onReprocesar(origenId, consumo, destinoId, produccion)}>
+          <Repeat size={18} /> Reprocesar
+        </Button>
+      </footer>
+    </Modal>
   );
 }
