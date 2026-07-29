@@ -60,6 +60,48 @@ export interface MovimientoCaja {
   total: number;
 }
 
+/* ---- Fidelización / Lealtad ---- */
+
+export interface Cliente {
+  id: string;
+  nombre: string;
+  nit: string;
+  telefono: string;
+  email: string;
+  visitas: number;
+  /** Saldo de puntos de lealtad. */
+  puntos: number;
+}
+
+export interface MovimientoLealtad {
+  id: string;
+  clienteId: string;
+  fecha: string;
+  /** Positivo = acumuló, negativo = canjeó. */
+  puntos: number;
+  descripcion: string;
+}
+
+export type TipoRecompensa = 'producto' | 'descuento_monto' | 'descuento_pct';
+
+/** Recompensa configurable por el admin: a X puntos, tal beneficio. */
+export interface Recompensa {
+  id: string;
+  nombre: string;
+  tipo: TipoRecompensa;
+  /** Puntos que cuesta canjearla. */
+  costoPuntos: number;
+  /** Producto gratis (productoId) o valor del descuento (Q o %) según tipo. */
+  productoId?: string;
+  valor?: number;
+  activa: boolean;
+}
+
+/** Configuración del programa: cuántos quetzales equivalen a 1 punto. */
+export interface ConfigLealtad {
+  quetzalesPorPunto: number;
+}
+
 interface Estado {
   mesas: Mesa[];
   comandas: Comanda[];
@@ -75,6 +117,11 @@ interface Estado {
   productos: Producto[];
   categorias: Categoria[];
   insumos: Insumo[];
+  /** Fidelización: clientes con puntos, historial, recompensas y configuración. */
+  clientes: Cliente[];
+  lealtad: MovimientoLealtad[];
+  recompensas: Recompensa[];
+  configLealtad: ConfigLealtad;
 }
 
 /** A qué estación va cada producto: bebidas frías a Barra, comida a Cocina. */
@@ -102,7 +149,18 @@ type Accion =
   | { tipo: 'abrirMesa'; mesaId: string; mesero: string }
   | { tipo: 'enviarComanda'; origen: string; lineas: LineaTicket[]; mesaId?: string }
   | { tipo: 'pedirCuenta'; mesaId: string }
-  | { tipo: 'cobrar'; mesaId?: string; tipoVenta: TipoVenta; metodo: MetodoPago; total: number; folio: string }
+  | {
+      tipo: 'cobrar';
+      mesaId?: string;
+      tipoVenta: TipoVenta;
+      metodo: MetodoPago;
+      total: number;
+      folio: string;
+      /** Cliente al que se le acumulan/canjean puntos (opcional). */
+      clienteId?: string;
+      /** Recompensa canjeada en esta venta (opcional). */
+      recompensaId?: string;
+    }
   | { tipo: 'moverComanda'; id: string; estado: Comanda['estado'] }
   | { tipo: 'retirarComanda'; id: string; desenlace: 'entregada' | 'descartada' }
   | { tipo: 'restaurarComanda'; id: string }
@@ -113,7 +171,11 @@ type Accion =
   | { tipo: 'cerrarCaja' }
   | { tipo: 'setProductos'; productos: Producto[] }
   | { tipo: 'setCategorias'; categorias: Categoria[] }
-  | { tipo: 'setInsumos'; insumos: Insumo[] };
+  | { tipo: 'setInsumos'; insumos: Insumo[] }
+  | { tipo: 'setClientes'; clientes: Cliente[] }
+  | { tipo: 'setRecompensas'; recompensas: Recompensa[] }
+  | { tipo: 'setConfigLealtad'; config: ConfigLealtad }
+  | { tipo: 'canjearRecompensa'; clienteId: string; recompensaId: string };
 
 /** Divide las líneas de un ticket en comandas por estación (Barra / Cocina). */
 function comandasDesdeLineas(
@@ -212,7 +274,52 @@ function reducer(estado: Estado, accion: Accion): Estado {
         const { [accion.mesaId]: _cerrada, ...resto } = estado.cuentas;
         cuentas = resto;
       }
-      return { ...estado, ventas: [venta, ...estado.ventas], mesas, cuentas };
+
+      // --- Fidelización ---
+      let clientes = estado.clientes;
+      let lealtad = estado.lealtad;
+      if (accion.clienteId) {
+        const fecha = new Date().toLocaleDateString('es-GT');
+        const nuevosMov: MovimientoLealtad[] = [];
+
+        // Canje de recompensa: descuenta los puntos que cuesta.
+        const recompensa = accion.recompensaId
+          ? estado.recompensas.find((r) => r.id === accion.recompensaId)
+          : undefined;
+        let deltaPuntos = 0;
+        if (recompensa) {
+          deltaPuntos -= recompensa.costoPuntos;
+          nuevosMov.push({
+            id: `ml-${Date.now()}-c`,
+            clienteId: accion.clienteId,
+            fecha,
+            puntos: -recompensa.costoPuntos,
+            descripcion: `Canje: ${recompensa.nombre}`,
+          });
+        }
+
+        // Acumulación: puntos según el monto pagado y la tasa configurada.
+        const ganados = Math.floor(accion.total / estado.configLealtad.quetzalesPorPunto);
+        if (ganados > 0) {
+          deltaPuntos += ganados;
+          nuevosMov.push({
+            id: `ml-${Date.now()}-a`,
+            clienteId: accion.clienteId,
+            fecha,
+            puntos: ganados,
+            descripcion: `Compra ${accion.folio}`,
+          });
+        }
+
+        clientes = estado.clientes.map((c) =>
+          c.id === accion.clienteId
+            ? { ...c, puntos: Math.max(0, c.puntos + deltaPuntos), visitas: c.visitas + 1 }
+            : c,
+        );
+        lealtad = [...nuevosMov, ...estado.lealtad];
+      }
+
+      return { ...estado, ventas: [venta, ...estado.ventas], mesas, cuentas, clientes, lealtad };
     }
 
     case 'moverComanda':
@@ -286,6 +393,38 @@ function reducer(estado: Estado, accion: Accion): Estado {
     case 'setInsumos':
       return { ...estado, insumos: accion.insumos };
 
+    case 'setClientes':
+      return { ...estado, clientes: accion.clientes };
+
+    case 'setRecompensas':
+      return { ...estado, recompensas: accion.recompensas };
+
+    case 'setConfigLealtad':
+      return { ...estado, configLealtad: accion.config };
+
+    case 'canjearRecompensa': {
+      // Canje manual desde la ficha del cliente (fuera de una venta).
+      const recompensa = estado.recompensas.find((r) => r.id === accion.recompensaId);
+      const cliente = estado.clientes.find((c) => c.id === accion.clienteId);
+      if (!recompensa || !cliente || cliente.puntos < recompensa.costoPuntos) return estado;
+      return {
+        ...estado,
+        clientes: estado.clientes.map((c) =>
+          c.id === accion.clienteId ? { ...c, puntos: c.puntos - recompensa.costoPuntos } : c,
+        ),
+        lealtad: [
+          {
+            id: `ml-${Date.now()}`,
+            clienteId: accion.clienteId,
+            fecha: new Date().toLocaleDateString('es-GT'),
+            puntos: -recompensa.costoPuntos,
+            descripcion: `Canje: ${recompensa.nombre}`,
+          },
+          ...estado.lealtad,
+        ],
+      };
+    }
+
     default:
       return estado;
   }
@@ -302,15 +441,30 @@ interface OperacionApi {
   productos: Producto[];
   categorias: Categoria[];
   insumos: Insumo[];
+  clientes: Cliente[];
+  lealtad: MovimientoLealtad[];
+  recompensas: Recompensa[];
+  configLealtad: ConfigLealtad;
   setProductos: (productos: Producto[]) => void;
   setCategorias: (categorias: Categoria[]) => void;
   setInsumos: (insumos: Insumo[]) => void;
+  setClientes: (clientes: Cliente[]) => void;
+  setRecompensas: (recompensas: Recompensa[]) => void;
+  setConfigLealtad: (config: ConfigLealtad) => void;
+  canjearRecompensa: (clienteId: string, recompensaId: string) => void;
   abrirCaja: (fondo: number, cajero: string) => void;
   cerrarCaja: () => void;
   abrirMesa: (mesaId: string, mesero: string) => void;
   enviarComanda: (origen: string, lineas: LineaTicket[], mesaId?: string) => string;
   pedirCuenta: (mesaId: string) => void;
-  cobrar: (args: { mesaId?: string; tipoVenta: TipoVenta; metodo: MetodoPago; total: number }) => string;
+  cobrar: (args: {
+    mesaId?: string;
+    tipoVenta: TipoVenta;
+    metodo: MetodoPago;
+    total: number;
+    clienteId?: string;
+    recompensaId?: string;
+  }) => string;
   moverComanda: (id: string, estado: Comanda['estado']) => void;
   retirarComanda: (id: string, desenlace: 'entregada' | 'descartada') => void;
   restaurarComanda: (id: string) => void;
@@ -320,6 +474,21 @@ interface OperacionApi {
 }
 
 const OperacionContext = createContext<OperacionApi | null>(null);
+
+/* ---- Seeds de fidelización ---- */
+const CLIENTES_SEED: Cliente[] = [
+  { id: 'c-1', nombre: 'Consumidor Final', nit: 'CF', telefono: '', email: '', visitas: 0, puntos: 0 },
+  { id: 'c-2', nombre: 'María Fernández', nit: '2456781-0', telefono: '+502 5544 1122', email: 'maria.f@mail.gt', visitas: 18, puntos: 240 },
+  { id: 'c-3', nombre: 'Restaurante El Buen Sabor', nit: '789123-4', telefono: '+502 2233 4455', email: 'compras@buensabor.gt', visitas: 42, puntos: 615 },
+  { id: 'c-4', nombre: 'José Morales', nit: '5566778-9', telefono: '+502 5566 7788', email: 'jose.morales@mail.gt', visitas: 7, puntos: 80 },
+];
+
+const RECOMPENSAS_SEED: Recompensa[] = [
+  { id: 'rw-1', nombre: 'Papas fritas gratis', tipo: 'producto', costoPuntos: 100, productoId: 'p-papas', activa: true },
+  { id: 'rw-2', nombre: 'Refresco gratis', tipo: 'producto', costoPuntos: 60, productoId: 'p-refresco', activa: true },
+  { id: 'rw-3', nombre: 'Q20 de descuento', tipo: 'descuento_monto', costoPuntos: 150, valor: 20, activa: true },
+  { id: 'rw-4', nombre: '15% de descuento', tipo: 'descuento_pct', costoPuntos: 200, valor: 15, activa: true },
+];
 
 const estadoInicial: Estado = {
   mesas: mesasSeed.map((m) => ({ ...m })),
@@ -333,6 +502,10 @@ const estadoInicial: Estado = {
   productos: productosSeed.map((p) => ({ ...p })),
   categorias: categoriasSeed.map((c) => ({ ...c })),
   insumos: insumosSeed.map((i) => ({ ...i })),
+  clientes: CLIENTES_SEED.map((c) => ({ ...c })),
+  lealtad: [],
+  recompensas: RECOMPENSAS_SEED.map((r) => ({ ...r })),
+  configLealtad: { quetzalesPorPunto: 10 },
 };
 
 export function OperacionProvider({ children }: { children: ReactNode }) {
@@ -350,9 +523,17 @@ export function OperacionProvider({ children }: { children: ReactNode }) {
       productos: estado.productos,
       categorias: estado.categorias,
       insumos: estado.insumos,
+      clientes: estado.clientes,
+      lealtad: estado.lealtad,
+      recompensas: estado.recompensas,
+      configLealtad: estado.configLealtad,
       setProductos: (productos) => dispatch({ tipo: 'setProductos', productos }),
       setCategorias: (categorias) => dispatch({ tipo: 'setCategorias', categorias }),
       setInsumos: (insumos) => dispatch({ tipo: 'setInsumos', insumos }),
+      setClientes: (clientes) => dispatch({ tipo: 'setClientes', clientes }),
+      setRecompensas: (recompensas) => dispatch({ tipo: 'setRecompensas', recompensas }),
+      setConfigLealtad: (config) => dispatch({ tipo: 'setConfigLealtad', config }),
+      canjearRecompensa: (clienteId, recompensaId) => dispatch({ tipo: 'canjearRecompensa', clienteId, recompensaId }),
       abrirCaja: (fondo, cajero) => dispatch({ tipo: 'abrirCaja', fondo, cajero }),
       cerrarCaja: () => dispatch({ tipo: 'cerrarCaja' }),
       abrirMesa: (mesaId, mesero) => dispatch({ tipo: 'abrirMesa', mesaId, mesero }),
@@ -362,9 +543,9 @@ export function OperacionProvider({ children }: { children: ReactNode }) {
         return folio;
       },
       pedirCuenta: (mesaId) => dispatch({ tipo: 'pedirCuenta', mesaId }),
-      cobrar: ({ mesaId, tipoVenta, metodo, total }) => {
+      cobrar: ({ mesaId, tipoVenta, metodo, total, clienteId, recompensaId }) => {
         const folio = siguienteFolio(estado.folioSeq);
-        dispatch({ tipo: 'cobrar', mesaId, tipoVenta, metodo, total, folio });
+        dispatch({ tipo: 'cobrar', mesaId, tipoVenta, metodo, total, folio, clienteId, recompensaId });
         return folio;
       },
       moverComanda: (id, estadoComanda) => dispatch({ tipo: 'moverComanda', id, estado: estadoComanda }),

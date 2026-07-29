@@ -15,6 +15,7 @@ export const RUTAS = {
   mesas: '/mesas',
   kds: '/kds',
   clientes: '/clientes',
+  lealtad: '/lealtad',
   personal: '/personal',
   inventario: '/inventario',
   catalogos: '/catalogos',

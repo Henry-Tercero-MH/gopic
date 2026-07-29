@@ -1,10 +1,11 @@
-import { FileDown, FileSpreadsheet, TrendingUp, TrendingDown, Scale, Trophy } from 'lucide-react';
+import { FileDown, FileSpreadsheet, TrendingUp, TrendingDown, Scale, Trophy, Gift, Star } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { formatCurrency } from '@/lib/format';
 import { useToast } from '@/lib/toast';
+import { useOperacion } from '@/lib/operacion';
 import { exportarCSV } from '@/lib/exportar';
 import { cn } from '@/lib/cn';
 import {
@@ -22,8 +23,23 @@ const INGRESOS_MES = 128_400;
 
 export function ReportesPage() {
   const toast = useToast();
+  const { lealtad, clientes, recompensas } = useOperacion();
   const maxDia = Math.max(...ventasPorDia.map((v) => v.monto));
   const totalSemana = ventasPorDia.reduce((s, v) => s + v.monto, 0);
+
+  // --- Fidelización ---
+  const puntosOtorgados = lealtad.filter((m) => m.puntos > 0).reduce((s, m) => s + m.puntos, 0);
+  const puntosCanjeados = lealtad.filter((m) => m.puntos < 0).reduce((s, m) => s + Math.abs(m.puntos), 0);
+  // Recompensas más canjeadas: cuenta los movimientos de canje por nombre de recompensa.
+  const recompensasCanjeadas = recompensas
+    .map((r) => ({
+      nombre: r.nombre,
+      veces: lealtad.filter((m) => m.puntos < 0 && m.descripcion === `Canje: ${r.nombre}`).length,
+    }))
+    .filter((r) => r.veces > 0)
+    .sort((a, b) => b.veces - a.veces);
+  // Clientes frecuentes: por saldo de puntos.
+  const topClientes = [...clientes].filter((c) => c.puntos > 0).sort((a, b) => b.puntos - a.puntos).slice(0, 5);
 
   // Rentabilidad del mes: ingresos − gastos (del módulo de Gastos) = utilidad.
   const gastosMes = gastosSeed.reduce((s, g) => s + g.monto, 0);
@@ -263,6 +279,70 @@ export function ReportesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      </Card>
+
+      {/* Fidelización */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2">
+          <Gift size={18} className="text-brand-500" />
+          <h2 className="font-display text-lg font-semibold text-text">Fidelización</h2>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          {/* Resumen */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+            <div className="rounded-lg bg-surface-alt p-3">
+              <p className="text-xs text-text-muted">Puntos otorgados</p>
+              <p className="num inline-flex items-center gap-1 text-2xl font-semibold text-accent-600">
+                <Star size={18} /> {puntosOtorgados}
+              </p>
+            </div>
+            <div className="rounded-lg bg-surface-alt p-3">
+              <p className="text-xs text-text-muted">Puntos canjeados</p>
+              <p className="num text-2xl font-semibold text-action-700">{puntosCanjeados}</p>
+            </div>
+          </div>
+
+          {/* Recompensas más canjeadas */}
+          <div>
+            <h3 className="text-sm font-semibold text-text">Recompensas más canjeadas</h3>
+            {recompensasCanjeadas.length === 0 ? (
+              <p className="mt-2 rounded-md bg-surface-alt px-3 py-2 text-xs text-text-muted">
+                Aún no hay canjes registrados en esta sesión.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {recompensasCanjeadas.map((r) => (
+                  <li key={r.nombre} className="flex items-center justify-between rounded-md bg-surface-alt px-3 py-2 text-sm">
+                    <span className="font-medium text-text">{r.nombre}</span>
+                    <Badge tone="accent">{r.veces}×</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Top clientes por puntos */}
+          <div>
+            <h3 className="text-sm font-semibold text-text">Clientes con más puntos</h3>
+            {topClientes.length === 0 ? (
+              <p className="mt-2 rounded-md bg-surface-alt px-3 py-2 text-xs text-text-muted">
+                Sin clientes con puntos todavía.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {topClientes.map((c, i) => (
+                  <li key={c.id} className="flex items-center gap-3">
+                    <span className="num w-4 shrink-0 text-center text-sm font-semibold text-text-muted">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{c.nombre}</span>
+                    <span className="num inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent-600">
+                      <Star size={13} /> {c.puntos}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </Card>
     </div>

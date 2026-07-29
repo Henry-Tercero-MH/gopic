@@ -34,7 +34,7 @@ import { formatCurrency } from '@/lib/format';
 import { iconoCategoria } from '@/lib/iconosCategoria';
 import { useToast } from '@/lib/toast';
 import { useOperacion, type TipoVenta } from '@/lib/operacion';
-import { type Producto, type Promocion } from '@/mock/data';
+import { recetas, type Producto, type Promocion } from '@/mock/data';
 
 
 const tipoVentaInfo: Record<TipoVenta, { label: string; icon: LucideIcon }> = {
@@ -45,7 +45,7 @@ const tipoVentaInfo: Record<TipoVenta, { label: string; icon: LucideIcon }> = {
 
 export function PosPage() {
   const [params, setParams] = useSearchParams();
-  const { mesas, cuentas, productos, categorias, enviarComanda, cobrar, pedirCuenta } = useOperacion();
+  const { mesas, cuentas, productos, categorias, recompensas, insumos, setInsumos, enviarComanda, cobrar, pedirCuenta } = useOperacion();
 
   const mesaId = params.get('mesa') ?? undefined;
   const mesa = mesaId ? mesas.find((m) => m.id === mesaId) : undefined;
@@ -83,6 +83,28 @@ export function PosPage() {
   const buscadorRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
   const confirm = useConfirm();
+
+  /**
+   * Producto gratis canjeado por puntos: rebaja del inventario los insumos de su
+   * receta (explosión de receta), dejando el consumo justificado como cortesía.
+   */
+  function canjearProductoInventario(productoId: string, recompensaNombre: string) {
+    const producto = productos.find((p) => p.id === productoId);
+    const receta = producto ? recetas.find((r) => r.producto === producto.nombre) : undefined;
+    if (!receta) {
+      toast.info(`Canje "${recompensaNombre}": producto de cortesía entregado.`);
+      return;
+    }
+    // Rebaja cada insumo de la receta que exista en el inventario (match por nombre).
+    const nuevos = insumos.map((i) => {
+      const usado = receta.detalle.find((d) => d.insumo === i.nombre);
+      if (!usado) return i;
+      const consumo = parseFloat(usado.cantidad) || 0;
+      return { ...i, existencia: Math.max(0, i.existencia - consumo) };
+    });
+    setInsumos(nuevos);
+    toast.exito(`Canje "${recompensaNombre}": inventario rebajado (cortesía por puntos).`);
+  }
 
   // Cuenta ya enviada a cocina para esta mesa (líneas acumuladas en el store).
   const cuenta = mesaId ? cuentas[mesaId] : undefined;
@@ -495,7 +517,7 @@ export function PosPage() {
       {cobroAbierto && (
         <CobroModal
           total={mesa ? totalEnviado + total : total}
-          registrarCobro={(metodo) => {
+          registrarCobro={({ metodo, clienteId, recompensaId, totalFinal }) => {
             // Pre-pago (mostrador/llevar): la comanda va a cocina al cobrar.
             if (!mesa && lineas.length > 0) {
               const origen = tipoVenta === 'llevar' ? 'Para llevar' : 'Mostrador';
@@ -505,8 +527,12 @@ export function PosPage() {
             if (mesa && lineas.length > 0) {
               enviarComanda(mesa.nombre, lineasParaStore(), mesa.id);
             }
-            const montoTotal = mesa ? totalEnviado + total : total;
-            return cobrar({ mesaId: mesa?.id, tipoVenta, metodo, total: montoTotal });
+            // Recompensa de producto gratis: rebaja el inventario con justificación.
+            const recompensa = recompensaId ? recompensas.find((r) => r.id === recompensaId) : undefined;
+            if (recompensa?.tipo === 'producto' && recompensa.productoId) {
+              canjearProductoInventario(recompensa.productoId, recompensa.nombre);
+            }
+            return cobrar({ mesaId: mesa?.id, tipoVenta, metodo, total: totalFinal, clienteId, recompensaId });
           }}
           onVentaCobrada={(v) =>
             toast.exito(`Venta ${v.folio} cobrada · ${formatCurrency(v.total)}`)

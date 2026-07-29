@@ -49,6 +49,7 @@ const router = createBrowserRouter([
       { path: 'mesas', element: pagina(() => import('@/features/mesas/MesasPage'), 'MesasPage') },
       { path: 'kds', element: pagina(() => import('@/features/kds/KdsPage'), 'KdsPage') },
       { path: 'clientes', element: pagina(() => import('@/features/clientes/ClientesPage'), 'ClientesPage') },
+      { path: 'lealtad', element: pagina(() => import('@/features/lealtad/LealtadPage'), 'LealtadPage') },
       { path: 'personal', element: pagina(() => import('@/features/personal/PersonalPage'), 'PersonalPage') },
       { path: 'inventario', element: pagina(() => import('@/features/inventario/InventarioPage'), 'InventarioPage') },
       { path: 'catalogos', element: pagina(() => import('@/features/catalogos/CatalogosPage'), 'CatalogosPage') },

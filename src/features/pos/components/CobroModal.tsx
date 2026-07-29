@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Banknote, CreditCard, CheckCircle2, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Banknote, CreditCard, CheckCircle2, X, Star, Gift, UserRound } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { type MetodoPago } from '@/lib/operacion';
+import { useOperacion, type MetodoPago, type Recompensa } from '@/lib/operacion';
 import { MetodoBtn } from './PosControls';
 import { DENOMINACIONES } from '../constantes';
 
@@ -14,6 +15,20 @@ export interface Venta {
   total: number;
   recibido: number;
   cambio: number;
+  puntosGanados: number;
+}
+
+export interface DatosCobro {
+  metodo: MetodoPago;
+  clienteId?: string;
+  recompensaId?: string;
+}
+
+/** Descuento en Q que aplica una recompensa de descuento sobre un total. */
+function descuentoDeRecompensa(r: Recompensa, base: number): number {
+  if (r.tipo === 'descuento_monto') return Math.min(r.valor ?? 0, base);
+  if (r.tipo === 'descuento_pct') return (base * (r.valor ?? 0)) / 100;
+  return 0; // producto gratis no descuenta del total (se regala aparte)
 }
 
 export function CobroModal({
@@ -25,27 +40,48 @@ export function CobroModal({
 }: {
   total: number;
   /** Aplica el cobro en el store y devuelve el folio real de la venta. */
-  registrarCobro: (metodo: MetodoPago) => string;
+  registrarCobro: (datos: DatosCobro & { totalFinal: number }) => string;
   onCerrar: () => void;
   onCompletar: () => void;
   onVentaCobrada: (venta: Venta) => void;
 }) {
+  const { clientes, recompensas, configLealtad } = useOperacion();
+
   const [metodo, setMetodo] = useState<MetodoPago>('efectivo');
   const [recibido, setRecibido] = useState('');
+  const [clienteId, setClienteId] = useState('');
+  const [recompensaId, setRecompensaId] = useState('');
   const [venta, setVenta] = useState<Venta | null>(null);
 
+  const cliente = clientes.find((c) => c.id === clienteId);
+  const recompensasCanjeables = useMemo(
+    () => (cliente ? recompensas.filter((r) => r.activa && cliente.puntos >= r.costoPuntos) : []),
+    [cliente, recompensas],
+  );
+  const recompensa = recompensaId ? recompensas.find((r) => r.id === recompensaId) : undefined;
+
+  const descuento = recompensa ? descuentoDeRecompensa(recompensa, total) : 0;
+  const totalFinal = Math.max(0, total - descuento);
+  const puntosGanados = cliente ? Math.floor(totalFinal / configLealtad.quetzalesPorPunto) : 0;
+
   const recibidoNum = parseFloat(recibido) || 0;
-  const cambio = recibidoNum - total;
-  const puedeConfirmar = metodo === 'tarjeta' || recibidoNum >= total;
+  const cambio = recibidoNum - totalFinal;
+  const puedeConfirmar = metodo === 'tarjeta' || recibidoNum >= totalFinal;
+
+  function elegirCliente(id: string) {
+    setClienteId(id);
+    setRecompensaId(''); // al cambiar de cliente se limpia la recompensa
+  }
 
   function confirmar() {
-    const folio = registrarCobro(metodo);
+    const folio = registrarCobro({ metodo, clienteId: clienteId || undefined, recompensaId: recompensaId || undefined, totalFinal });
     const nueva: Venta = {
       folio,
       metodo,
-      total,
-      recibido: metodo === 'efectivo' ? recibidoNum : total,
+      total: totalFinal,
+      recibido: metodo === 'efectivo' ? recibidoNum : totalFinal,
       cambio: metodo === 'efectivo' ? cambio : 0,
+      puntosGanados,
     };
     setVenta(nueva);
     onVentaCobrada(nueva);
@@ -83,6 +119,12 @@ export function CobroModal({
             )}
           </dl>
 
+          {venta.puntosGanados > 0 && (
+            <p className="num mt-3 inline-flex items-center gap-1 rounded-full bg-accent-400/20 px-3 py-1 text-sm font-semibold text-accent-600">
+              <Star size={14} /> +{venta.puntosGanados} puntos acumulados
+            </p>
+          )}
+
           <Button size="lg" className="mt-5 w-full" onClick={onCompletar}>
             Nueva venta
           </Button>
@@ -93,7 +135,7 @@ export function CobroModal({
           <header className="flex items-center justify-between border-b border-border p-4">
             <div>
               <h3 className="font-display text-lg font-semibold text-text">Cobrar</h3>
-              <p className="num text-sm text-text-muted">Total a pagar: {formatCurrency(total)}</p>
+              <p className="num text-sm text-text-muted">Total a pagar: {formatCurrency(totalFinal)}</p>
             </div>
             <button
               onClick={onCerrar}
@@ -104,21 +146,98 @@ export function CobroModal({
             </button>
           </header>
 
-          <div className="space-y-4 p-4">
+          <div className="max-h-[70vh] space-y-4 overflow-auto scroll-thin p-4">
+            {/* Cliente (fidelización) */}
+            <div>
+              <label htmlFor="cliente" className="mb-1 flex items-center gap-1.5 text-sm font-medium text-text">
+                <UserRound size={15} /> Cliente
+              </label>
+              <select
+                id="cliente"
+                value={clienteId}
+                onChange={(e) => elegirCliente(e.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none"
+              >
+                <option value="">Sin cliente (Consumidor Final)</option>
+                {clientes
+                  .filter((c) => c.nit !== 'CF')
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre} · {c.puntos} pts
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Recompensa canjeable */}
+            {cliente && (
+              <div>
+                <span className="mb-1 flex items-center gap-1.5 text-sm font-medium text-text">
+                  <Gift size={15} /> Canjear recompensa
+                </span>
+                {recompensasCanjeables.length === 0 ? (
+                  <p className="rounded-md bg-surface-alt px-3 py-2 text-xs text-text-muted">
+                    {cliente.nombre} tiene {cliente.puntos} pts. Aún no alcanza para ninguna recompensa activa.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <button
+                      onClick={() => setRecompensaId('')}
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                        recompensaId === '' ? 'border-action-500 bg-action-50 text-action-700' : 'border-border hover:bg-surface-sunk',
+                      )}
+                    >
+                      No canjear puntos
+                    </button>
+                    {recompensasCanjeables.map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => setRecompensaId(r.id)}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                          recompensaId === r.id ? 'border-action-500 bg-action-50 text-action-700' : 'border-border hover:bg-surface-sunk',
+                        )}
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium text-text">{r.nombre}</span>
+                        <Badge tone="accent"><Star size={11} className="mr-0.5" /> {r.costoPuntos}</Badge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Desglose si hay descuento por recompensa */}
+            {recompensa && (
+              <dl className="space-y-1 rounded-lg bg-surface-alt p-3 text-sm">
+                <div className="flex justify-between text-text-muted">
+                  <dt>Subtotal</dt>
+                  <dd className="num">{formatCurrency(total)}</dd>
+                </div>
+                {descuento > 0 && (
+                  <div className="flex justify-between text-accent-600">
+                    <dt>{recompensa.nombre}</dt>
+                    <dd className="num">−{formatCurrency(descuento)}</dd>
+                  </div>
+                )}
+                {recompensa.tipo === 'producto' && (
+                  <div className="flex justify-between text-accent-600">
+                    <dt>Producto de regalo</dt>
+                    <dd className="text-xs">se rebaja del inventario</dd>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-border pt-1 font-semibold text-text">
+                  <dt>Total</dt>
+                  <dd className="num">{formatCurrency(totalFinal)}</dd>
+                </div>
+              </dl>
+            )}
+
             {/* Método de pago */}
             <div className="grid grid-cols-2 gap-2">
-              <MetodoBtn
-                activo={metodo === 'efectivo'}
-                icon={Banknote}
-                label="Efectivo"
-                onClick={() => setMetodo('efectivo')}
-              />
-              <MetodoBtn
-                activo={metodo === 'tarjeta'}
-                icon={CreditCard}
-                label="Tarjeta"
-                onClick={() => setMetodo('tarjeta')}
-              />
+              <MetodoBtn activo={metodo === 'efectivo'} icon={Banknote} label="Efectivo" onClick={() => setMetodo('efectivo')} />
+              <MetodoBtn activo={metodo === 'tarjeta'} icon={CreditCard} label="Tarjeta" onClick={() => setMetodo('tarjeta')} />
             </div>
 
             {metodo === 'efectivo' ? (
@@ -140,15 +259,14 @@ export function CobroModal({
                   />
                 </div>
 
-                {/* Montos rápidos */}
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => setRecibido(String(total))}
+                    onClick={() => setRecibido(String(totalFinal))}
                     className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-surface-sunk"
                   >
                     Exacto
                   </button>
-                  {DENOMINACIONES.filter((d) => d >= total).map((d) => (
+                  {DENOMINACIONES.filter((d) => d >= totalFinal).map((d) => (
                     <button
                       key={d}
                       onClick={() => setRecibido(String(d))}
@@ -159,7 +277,6 @@ export function CobroModal({
                   ))}
                 </div>
 
-                {/* Cambio */}
                 <div className="flex items-center justify-between rounded-lg bg-surface-alt px-4 py-3">
                   <span className="text-sm font-medium text-text-muted">Cambio</span>
                   <span className={cn('num text-xl font-bold', cambio >= 0 ? 'text-success' : 'text-text-muted')}>
@@ -170,14 +287,18 @@ export function CobroModal({
             ) : (
               <div className="rounded-lg border border-dashed border-border p-6 text-center">
                 <CreditCard size={32} className="mx-auto text-text-muted" />
-                <p className="mt-2 text-sm text-text-muted">
-                  Pasa o inserta la tarjeta en la terminal y aprueba el pago.
-                </p>
+                <p className="mt-2 text-sm text-text-muted">Pasa o inserta la tarjeta en la terminal y aprueba el pago.</p>
               </div>
             )}
 
+            {cliente && puntosGanados > 0 && (
+              <p className="num text-center text-xs text-text-muted">
+                {cliente.nombre} ganará <span className="font-semibold text-accent-600">+{puntosGanados} puntos</span> con esta compra.
+              </p>
+            )}
+
             <Button size="lg" className="w-full" disabled={!puedeConfirmar} onClick={confirmar}>
-              <CheckCircle2 size={20} /> Confirmar pago · {formatCurrency(total)}
+              <CheckCircle2 size={20} /> Confirmar pago · {formatCurrency(totalFinal)}
             </Button>
           </div>
         </>

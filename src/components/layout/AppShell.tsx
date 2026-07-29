@@ -7,6 +7,7 @@ import {
   Utensils,
   ChefHat,
   Users,
+  Gift,
   Contact,
   Package,
   Library,
@@ -63,6 +64,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: RUTAS.personal, label: 'Personal', icon: Contact },
       { to: RUTAS.clientes, label: 'Clientes', icon: Users },
+      { to: RUTAS.lealtad, label: 'Fidelización', icon: Gift },
       { to: RUTAS.inventario, label: 'Inventario', icon: Package },
       { to: RUTAS.catalogos, label: 'Catálogos', icon: Library },
       { to: RUTAS.recetario, label: 'Recetario', icon: BookOpen },

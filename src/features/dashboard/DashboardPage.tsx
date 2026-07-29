@@ -1,4 +1,4 @@
-import { Wallet, Receipt, Repeat, Utensils, Store, ShoppingBag } from 'lucide-react';
+import { Wallet, Receipt, Repeat, Utensils, Store, ShoppingBag, Star, Gift } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
@@ -15,7 +15,13 @@ const tipoVentaBadge: Record<TipoVenta, { label: string; icon: typeof Utensils }
 };
 
 export function DashboardPage() {
-  const { ventas, mesas } = useOperacion();
+  const { ventas, mesas, lealtad, clientes } = useOperacion();
+
+  // Resumen de fidelización de la sesión.
+  const puntosOtorgados = lealtad.filter((m) => m.puntos > 0).reduce((s, m) => s + m.puntos, 0);
+  const puntosCanjeados = lealtad.filter((m) => m.puntos < 0).reduce((s, m) => s + Math.abs(m.puntos), 0);
+  const canjes = lealtad.filter((m) => m.puntos < 0).length;
+  const clientesConPuntos = clientes.filter((c) => c.puntos > 0).length;
 
   // KPIs en vivo: se parte de una base acumulada del día y se suman las ventas
   // cobradas en esta sesión (así el tablero refleja lo que pasa en el POS).
@@ -158,6 +164,20 @@ export function DashboardPage() {
         )}
       </Card>
 
+      {/* Fidelización */}
+      <Card className="p-3 sm:p-4">
+        <div className="flex items-center gap-2">
+          <Gift size={18} className="text-brand-500" />
+          <h2 className="font-display text-lg font-semibold text-text">Fidelización</h2>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MiniStat icon={Star} tono="accent" label="Puntos otorgados" valor={String(puntosOtorgados)} hint="en la sesión" />
+          <MiniStat icon={Gift} tono="action" label="Puntos canjeados" valor={String(puntosCanjeados)} hint={`${canjes} canje${canjes === 1 ? '' : 's'}`} />
+          <MiniStat icon={Repeat} tono="brand" label="Clientes con puntos" valor={String(clientesConPuntos)} hint={`de ${clientes.length}`} />
+          <MiniStat icon={Star} tono="info" label="Puntos en circulación" valor={String(clientes.reduce((s, c) => s + c.puntos, 0))} hint="saldo total" />
+        </div>
+      </Card>
+
       {/* Top productos */}
       <Card className="p-3 sm:p-4">
         <h2 className="font-display text-lg font-semibold text-text">Más vendidos hoy</h2>
@@ -182,6 +202,37 @@ export function DashboardPage() {
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function MiniStat({
+  icon: Icon,
+  tono,
+  label,
+  valor,
+  hint,
+}: {
+  icon: typeof Star;
+  tono: 'brand' | 'action' | 'info' | 'accent';
+  label: string;
+  valor: string;
+  hint: string;
+}) {
+  const tonos: Record<string, string> = {
+    brand: 'bg-brand-100 text-brand-700',
+    action: 'bg-action-50 text-action-700',
+    info: 'bg-info/12 text-info',
+    accent: 'bg-accent-400/25 text-accent-600',
+  };
+  return (
+    <div className="rounded-lg bg-surface-alt p-3">
+      <span className={`grid h-8 w-8 place-items-center rounded-md ${tonos[tono]}`}>
+        <Icon size={16} />
+      </span>
+      <p className="mt-2 text-xs text-text-muted">{label}</p>
+      <p className="num text-xl font-semibold text-text">{valor}</p>
+      <p className="text-xs text-text-muted">{hint}</p>
     </div>
   );
 }
