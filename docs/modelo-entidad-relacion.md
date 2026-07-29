@@ -1,38 +1,42 @@
 # Modelo Entidad-Relación — GOPIC (Sistema POS / ERP para restaurante de comida rápida)
 
-> **Versión 2.0 — revisión DBA.** Documento de diseño de base de datos relacional, normalizado hasta **3FN** con desnormalizaciones controladas donde el negocio lo exige (precios y costos **congelados** en documentos históricos).
+> **Versión 4.0 — documento maestro.** Integra en un solo lugar: el modelo relacional base (v2, revisión DBA), la **capa de lógica de negocio en la base de datos** (funciones PL/pgSQL, v3) y el **módulo de pedidos en línea** (módulo 17). Normalizado a **3FN** con desnormalizaciones controladas (precios/costos **congelados** en documentos históricos).
 >
-> **Motor objetivo:** PostgreSQL 15+.
-> **Convenciones:** claves primarias `UUID`, nombres de tabla en `snake_case` singular, importes en `NUMERIC(12,4)` (costeo) y `total` fiscal redondeado a 2 decimales, timestamps `TIMESTAMPTZ`, borrado lógico (`deleted_at`) en catálogos, los documentos (facturas, movimientos) nunca se borran: se cancelan.
+> **Motor objetivo:** PostgreSQL 15+ (validado en 16). **Despliegue:** Docker.
+> **Convenciones:** PKs `UUID`, tablas `snake_case` singular, importes `NUMERIC(12,4)` (costeo) y `NUMERIC(12,2)` en totales fiscales cobrables, timestamps `TIMESTAMPTZ`, borrado lógico (`deleted_at`) en catálogos; documentos (facturas, movimientos, pedidos) no se borran: se cancelan.
 >
-> **Principio rector de esta versión:** *toda regla de negocio crítica se enforza en la base de datos, no solo en la capa de aplicación.* Estados, tipos, saldos no negativos, unicidades condicionales y no-cruce entre sucursales se garantizan con `CHECK`, índices parciales y FKs compuestas.
+> **Principio rector:** toda regla de negocio crítica se enforza en la base de datos (constraints), y toda operación multi-tabla se ejecuta como **transacción atómica dentro de una función**.
 
 ---
 
-## 0. Changelog v1 → v2 (qué cambió y por qué)
+## 0. Changelog
 
-| # | Severidad | Cambio | Justificación |
-|---|---|---|---|
-| 1 | 🔴 | **Saldos como caché con enforcement.** `existencia.cantidad`, `cliente.puntos` y `movimiento_inventario.saldo` se declaran cachés materializados; se actualizan en la misma transacción con `SELECT … FOR UPDATE` sobre la fila del caché + `CHECK (>= 0)`. | Bajo concurrencia, dos operaciones simultáneas podían leer el mismo saldo previo y dejar descuadres/puntos negativos. El `CHECK` es la red de seguridad a nivel DB. |
-| 2 | 🔴 | **`CHECK` en todos los estados/tipos** antes en `VARCHAR` libre. | Un typo (`'emitda'`) entraba sin validación y rompía reportes y máquinas de estado. Costo del `CHECK`: cero. |
-| 3 | 🔴 | **FKs compuestas `(id, sucursal_id)`** en la cadena `zona→mesa→cuenta` y `caja_sesion→factura`. | Impide registros cruzados entre sucursales (una mesa de sucursal A marcada como B contamina inventario y cortes de caja). |
-| 4 | 🔴 | **Eliminado `factura.promocion_id`.** El historial de promos vive solo en `promocion_aplicacion` (1—N). | Dos representaciones del mismo hecho divergen. Una tabla puente soporta 1 o N promos sin conflicto de cardinalidad. |
-| 5 | 🔴 | **Reemplazada la referencia polimórfica** de `movimiento_inventario` por FKs tipadas nullables + `CHECK` de exclusividad. | Recupera integridad referencial real y joins directos, sin `documento_id` colgando de nada. |
-| 6 | 🟡 | **Índices explícitos en FKs** + **índices/únicos parciales** (`WHERE deleted_at IS NULL`). | Postgres no indexa el lado FK automáticamente; sin índice, `ON DELETE CASCADE` escanea el hijo entero. Los parciales permiten reusar nombres de catálogos borrados. |
-| 7 | 🟡 | **Unicidades añadidas:** NIT cliente (salvo CF), una caja abierta por cajero, folio de comanda; `email` en `CITEXT`. | Bugs clásicos de duplicados y de comparación case-sensitive de emails. |
-| 8 | 🟡 | **Columnas derivadas → `GENERATED ALWAYS AS … STORED`** (`diferencia`, `cambio`, `subtotal` de detalle). | La DB las mantiene coherentes; imposible desincronizarlas. No aplica a valores *congelados* de factura. |
-| 9 | 🟡 | **`promocion.aplica_en` texto libre → `promocion_objetivo`** (tabla puente con FK) + tabla `combo_componente`. | Permite responder "¿qué promos aplican a Hamburguesas?" con joins, sin typos, y estructura los combos. |
-| 10 | 🟡 | **Trazabilidad `comanda_detalle → factura_detalle`** vía `comanda_detalle_id` nullable en la línea de factura. | Liga lo que la cocina preparó con lo que se cobró (tiempos, anulaciones). |
-| 11 | 🟡 | **Decisión de tenancy documentada** (ver §1.1). Se deja `cliente` y catálogo por sucursal, con nota de migración a cadena. | Cambiar de franquicia independiente a cadena compartida después es caro; se advierte antes de escalar. |
-| 12 | 🟡 | **Anti-solape de reservaciones** con constraint `EXCLUDE` (`btree_gist`). | Nada impedía reservar la misma mesa en horarios que se pisan. |
-| 13 | 🟡 | **`bitacora` particionada por rango de fecha** + política de retención. | Es la tabla de mayor crecimiento real; su índice frena los `INSERT` de negocio si no se archiva. |
-| 14 | 🟢 | Redondeo fiscal a 2 decimales, nullability explícita, `version` para optimistic locking, entidad `caja` física opcional, ERD corregido. | Detalles de robustez; ver §11. |
+**v3 → v4 (este documento)**
+
+| # | Cambio |
+|---|---|
+| M | **Integración del módulo 17: pedidos en línea** (§4.15). Tablas nuevas: `cliente_credencial`, `cliente_direccion`, `pedido`, `pedido_detalle`, `pedido_detalle_modificador`, `pedido_estado_historial`, `entrega`, `transaccion_pago`. |
+| N | **`factura` ajustada para canal online:** `caja_sesion_id` pasa a **nullable** + columna `origen` (`pos`/`online`) con `CHECK`. |
+| O | Diagrama Mermaid y §5 relaciones ampliados con el módulo online. |
+
+**v2 → v3**
+
+| # | Cambio |
+|---|---|
+| A | **Capa de lógica en la DB:** los procesos pasan de "notas para la app" a **funciones PL/pgSQL** reales (§10). El backend las invoca con `SELECT funcion(...)`. |
+| B | **Inventario se descuenta al cobrar** (decisión de negocio confirmada): la explosión de receta ocurre dentro de `registrar_venta`, no al mandar la comanda. *(Corrige la antigua nota §7.4 del v2.)* |
+| C | **Nueva tabla `folio_secuencia`** para folios consecutivos race-safe (`UPDATE … RETURNING`) por sucursal y ámbito. |
+| D | Índice de `marcaje` corregido a `(empleado_id, entrada)` — el cast `entrada::date` no es `IMMUTABLE` y no sirve para índice. |
+
+**v1 → v2 (resumen)**
+
+`CHECK` en todos los estados/tipos · saldos como caché con `CHECK (>=0)` y lock · FKs compuestas `(id, sucursal_id)` anti-cruce entre sucursales · eliminado `factura.promocion_id` (queda `promocion_aplicacion`) · reemplazada referencia polimórfica de `movimiento_inventario` por FKs tipadas + `CHECK` de exclusividad · índices/únicos parciales · columnas `GENERATED` · `promocion_objetivo` + `combo_componente` · trazabilidad `comanda_detalle → factura_detalle` · anti-solape de reservaciones (`EXCLUDE`) · entidad `caja` física · `CITEXT` en emails.
 
 ---
 
 ## 1. Alcance del modelo
 
-El modelo cubre los 16 módulos del sistema:
+17 módulos:
 
 | Dominio | Tablas principales |
 |---|---|
@@ -50,48 +54,35 @@ El modelo cubre los 16 módulos del sistema:
 | Caja | `caja`, `caja_sesion`, `caja_movimiento` |
 | Clientes / fidelización | `cliente`, `config_lealtad`, `recompensa`, `movimiento_lealtad` |
 | Gastos | `categoria_gasto`, `gasto` |
+| **Pedidos en línea** | **`cliente_credencial`, `cliente_direccion`, `pedido`, `pedido_detalle`, `pedido_detalle_modificador`, `pedido_estado_historial`, `entrega`, `transaccion_pago`** |
+| **Secuencias** | **`folio_secuencia`** |
 
-### 1.1 Decisión de tenancy (⚠ confirmar con el negocio antes de escalar)
+### 1.1 Decisión de tenancy (⚠ confirmar antes de escalar)
 
-Este modelo trata cada `sucursal` como un **tenant semi-independiente**: `producto`, `categoria`, `cliente`, `config_lealtad` y `recompensa` cuelgan de `sucursal_id`. Implicaciones:
-
-- El mismo producto se duplica en cada sucursal (menús independientes).
-- Un `cliente` con puntos en la sucursal A **no** los tiene en la B: es un registro distinto.
-
-**Esto es correcto para franquicias independientes.** Si GOPIC es una **cadena con menú y lealtad compartidos**, hay que:
-- Hacer `cliente` **global** (o global + un `cliente_sucursal_saldo` con puntos por sucursal), y
-- Centralizar el catálogo de `producto`/`categoria`, dejando solo `precio` y disponibilidad por sucursal (tabla `producto_sucursal`).
-
-Migrar esto después de tener datos en producción es caro. **Confírmalo ahora.**
+Cada `sucursal` es un **tenant semi-independiente**: `producto`, `categoria`, `cliente`, `config_lealtad`, `recompensa` cuelgan de `sucursal_id`. Implica: el mismo producto se duplica por sucursal, y un `cliente` con puntos en A no los tiene en B. **Correcto para franquicias independientes.** Si es **cadena con menú/lealtad compartidos**, hay que hacer `cliente` global (o global + `cliente_sucursal_saldo`) y centralizar el catálogo (`producto_sucursal` con precio/disponibilidad). Migrarlo con datos en producción es caro; confírmalo ahora.
 
 ---
 
 ## 2. Reglas de normalización aplicadas
 
-- **1FN:** todos los atributos son atómicos. Los modificadores de una línea viven en `factura_detalle_modificador`, no en un campo de texto.
-- **2FN:** en claves compuestas (`rol_permiso`, `producto_grupo_modificador`) ningún atributo no clave depende solo de una parte de la clave.
-- **3FN:** eliminadas las dependencias transitivas. `comanda_detalle` referencia `producto_id`, no copia el nombre.
+- **1FN/2FN/3FN** aplicadas (atributos atómicos; sin dependencias parciales ni transitivas).
 - **Desnormalizaciones intencionales y documentadas:**
-  1. **Congelamiento de documentos:** `factura_detalle` congela `descripcion`, `precio_unitario`, `impuesto_tasa`; `orden_compra_detalle` congela `costo_unitario`; `factura_detalle_modificador` congela `nombre`/`precio_extra`. Una factura es un documento histórico inmutable.
-  2. **Cachés de saldo:** `existencia.cantidad`, `cliente.puntos`, `insumo.costo_promedio` y `movimiento_inventario.saldo` son valores derivados materializados. **Su fuente de verdad es el ledger** (`movimiento_inventario`, `movimiento_lealtad`); se recalculan en la misma transacción, con lock de fila y `CHECK (>= 0)`.
-- **Integridad referencial:** toda FK declara `ON DELETE`. Catálogos usan `RESTRICT`; las líneas de detalle usan `CASCADE` respecto de su documento padre. Multi-tenant blindado con FKs compuestas (§ diccionario).
+  1. **Congelamiento de documentos:** `factura_detalle` (`descripcion`, `precio_unitario`, `impuesto_tasa`), `orden_compra_detalle` (`costo_unitario`), `factura_detalle_modificador` (`nombre`/`precio_extra`), y ahora `pedido_detalle`/`pedido_detalle_modificador` (precio online congelado al ordenar).
+  2. **Cachés de saldo:** `existencia.cantidad`, `cliente.puntos`, `insumo.costo_promedio`, `movimiento_inventario.saldo`. Fuente de verdad = el ledger; se recalculan en la misma transacción, con lock de fila y `CHECK (>= 0)`.
+- **Integridad referencial:** toda FK declara `ON DELETE`. Catálogos usan `RESTRICT`; detalle usa `CASCADE`. Multi-tenant blindado con FKs compuestas.
 
 ---
 
 ## 3. Columnas comunes (auditoría)
 
-Todas las tablas incluyen, salvo indicación contraria:
-
 | Columna | Tipo | Descripción |
 |---|---|---|
 | `id` | `UUID` PK | `DEFAULT gen_random_uuid()` |
 | `created_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT now()` |
-| `updated_at` | `TIMESTAMPTZ NOT NULL` | actualizado por trigger |
-| `deleted_at` | `TIMESTAMPTZ NULL` | borrado lógico (solo en catálogos) |
+| `updated_at` | `TIMESTAMPTZ NOT NULL` | trigger `set_updated_at` |
+| `deleted_at` | `TIMESTAMPTZ NULL` | borrado lógico (solo catálogos) |
 
-> **Convención de nullability:** en el diccionario, toda columna es `NOT NULL` salvo que se marque explícitamente `NULL`. Nombres, montos y estados son siempre `NOT NULL`.
-
-En el diccionario se omiten estas columnas por brevedad, excepto cuando el borrado lógico **no** aplica (documentos e inmutables: `bitacora`, `movimiento_inventario`, `movimiento_lealtad`, `factura`, `nota_credito`).
+> **Nullability:** toda columna es `NOT NULL` salvo marca `NULL`. Nombres, montos y estados siempre `NOT NULL`. Se omiten estas columnas en el diccionario salvo en inmutables (`bitacora`, `movimiento_inventario`, `movimiento_lealtad`, `factura`, `nota_credito`, `pedido`, `pedido_estado_historial`, `transaccion_pago`), que no llevan `deleted_at`/`updated_at`.
 
 ---
 
@@ -99,7 +90,7 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 
 ### 4.1 Multi-sucursal
 
-**`sucursal`** — Cada local del negocio. Casi todas las tablas operativas cuelgan de aquí.
+**`sucursal`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -108,59 +99,57 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `direccion` | `VARCHAR(200)` | |
 | `telefono` | `VARCHAR(30)` | |
 | `moneda` | `CHAR(3)` | `DEFAULT 'GTQ'`, `CHECK (moneda ~ '^[A-Z]{3}$')` |
-| `logo_drive_id` | `VARCHAR(100) NULL` | File ID de Google Drive. Ver §8. |
+| `logo_drive_id` | `VARCHAR(100) NULL` | File ID de Drive (§8) |
 | `activo` | `BOOLEAN` | `DEFAULT true` |
-
-> `ALTER TABLE sucursal ADD UNIQUE (id, nombre);` — necesario para FKs compuestas aguas abajo. Además `UNIQUE (id)` ya la da la PK; para las compuestas se usa `UNIQUE (id, sucursal_id)` en las tablas hijas (ver más abajo).
 
 ### 4.2 Seguridad y RBAC
 
-**`usuario`** — Credenciales de acceso. Puede o no estar ligado a un empleado.
+**`usuario`** — Acceso de **staff** (no clientes).
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `empleado_id` | `UUID FK → empleado NULL` | `ON DELETE SET NULL` |
 | `sucursal_id` | `UUID FK → sucursal` | |
-| `email` | `CITEXT` | `UNIQUE`. `CITEXT` para comparación case-insensitive (`CREATE EXTENSION citext;`) |
+| `email` | `CITEXT` | `UNIQUE` |
 | `password_hash` | `VARCHAR(255)` | Argon2 |
-| `intentos_fallidos` | `SMALLINT` | `DEFAULT 0`, `CHECK (intentos_fallidos >= 0)`, bloqueo a los 5 |
+| `intentos_fallidos` | `SMALLINT` | `DEFAULT 0`, `CHECK (>=0)`, bloqueo a los 5 |
 | `bloqueado_hasta` | `TIMESTAMPTZ NULL` | |
 | `activo` | `BOOLEAN` | `DEFAULT true` |
 
-**`rol`** — Agrupación de permisos. Editable desde la UI.
+**`rol`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `sucursal_id` | `UUID FK → sucursal NULL` | NULL = rol global |
 | `nombre` | `VARCHAR(60)` | |
 | `descripcion` | `VARCHAR(200)` | |
-| `es_sistema` | `BOOLEAN` | `DEFAULT false`, roles base no eliminables |
+| `es_sistema` | `BOOLEAN` | `DEFAULT false` |
 
-> Único parcial: `CREATE UNIQUE INDEX uq_rol_nombre ON rol (COALESCE(sucursal_id,'00000000-0000-0000-0000-000000000000'), nombre) WHERE deleted_at IS NULL;`
+> `CREATE UNIQUE INDEX uq_rol_nombre ON rol (COALESCE(sucursal_id,'00000000-0000-0000-0000-000000000000'), nombre) WHERE deleted_at IS NULL;`
 
-**`permiso`** — Permiso granular (`invoice.create`, `inventory.adjust`, `report.view_costs`).
+**`permiso`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
-| `codigo` | `VARCHAR(80)` | `UNIQUE`, `CHECK (codigo ~ '^[a-z_]+\.[a-z_]+$')` |
+| `codigo` | `VARCHAR(80)` | `UNIQUE`, `CHECK (~ '^[a-z_]+\.[a-z_]+$')` |
 | `descripcion` | `VARCHAR(200)` | |
-| `modulo` | `VARCHAR(40)` | agrupador para la UI |
+| `modulo` | `VARCHAR(40)` | agrupador UI |
 
-**`rol_permiso`** — N:M rol↔permiso. PK compuesta `(rol_id, permiso_id)`.
+**`rol_permiso`** — PK `(rol_id, permiso_id)`.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `rol_id` | `UUID FK → rol` | `ON DELETE CASCADE` |
 | `permiso_id` | `UUID FK → permiso` | `ON DELETE CASCADE` |
 
-**`usuario_rol`** — N:M usuario↔rol. PK compuesta `(usuario_id, rol_id)`.
+**`usuario_rol`** — PK `(usuario_id, rol_id)`.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `usuario_id` | `UUID FK → usuario` | `ON DELETE CASCADE` |
 | `rol_id` | `UUID FK → rol` | `ON DELETE RESTRICT` |
 
-**`sesion`** — Refresh tokens activos.
+**`sesion`** — Refresh tokens de staff.
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -170,9 +159,9 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `revocada` | `BOOLEAN` | `DEFAULT false` |
 | `user_agent` | `VARCHAR(255) NULL` | |
 
-> Índice: `CREATE INDEX ix_sesion_usuario_activa ON sesion (usuario_id) WHERE revocada = false;`
+> `CREATE INDEX ix_sesion_usuario_activa ON sesion (usuario_id) WHERE revocada = false;`
 
-**`bitacora`** — Auditoría inmutable. **No** tiene `deleted_at` ni `updated_at`. **Particionada por rango sobre `created_at`** (ver §7).
+**`bitacora`** — Auditoría inmutable. Sin `deleted_at`/`updated_at`. Candidata a particionar por `created_at` (§9).
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -187,12 +176,7 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 
 ### 4.3 Personal
 
-**`puesto`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `nombre` | `VARCHAR(60)` | |
-| `salario_base` | `NUMERIC(12,4)` | `CHECK (salario_base >= 0)` |
+**`puesto`** — `nombre VARCHAR(60)`; `salario_base NUMERIC(12,4) CHECK (>=0)`.
 
 **`empleado`**
 
@@ -204,31 +188,23 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `telefono` | `VARCHAR(30) NULL` | |
 | `email` | `CITEXT NULL` | |
 | `fecha_ingreso` | `DATE` | |
-| `foto_drive_id` | `VARCHAR(100) NULL` | Ver §8. |
+| `foto_drive_id` | `VARCHAR(100) NULL` | §8 |
 | `activo` | `BOOLEAN` | `DEFAULT true` |
+| — | | `UNIQUE (id, sucursal_id)` (FK compuesta: mesero de `cuenta`, repartidor de `entrega`) |
 
-> Se agrega `UNIQUE (id, sucursal_id)` para FKs compuestas (mesero de `cuenta`).
+**`turno`** — `sucursal_id`, `nombre VARCHAR(40)`, `hora_inicio TIME`, `hora_fin TIME`.
 
-**`turno`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | |
-| `nombre` | `VARCHAR(40)` | |
-| `hora_inicio` | `TIME` | |
-| `hora_fin` | `TIME` | |
-
-**`marcaje`** — Registro de entrada/salida.
+**`marcaje`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `empleado_id` | `UUID FK → empleado` | |
 | `turno_id` | `UUID FK → turno NULL` | |
 | `entrada` | `TIMESTAMPTZ NULL` | |
-| `salida` | `TIMESTAMPTZ NULL` | `CHECK (salida IS NULL OR salida >= entrada)` |
-| `minutos_trabajados` | `INTEGER NULL` | derivado, calculado al cerrar; `CHECK (minutos_trabajados >= 0)` |
+| `salida` | `TIMESTAMPTZ NULL` | `CHECK (salida IS NULL OR entrada IS NULL OR salida >= entrada)` |
+| `minutos_trabajados` | `INTEGER NULL` | `CHECK (>= 0)` |
 
-> Se elimina `fecha` (redundante, derivable de `entrada::date`). Índice: `CREATE INDEX ix_marcaje_emp_fecha ON marcaje (empleado_id, (entrada::date));`
+> Sin `fecha` (derivable). Índice: `CREATE INDEX ix_marcaje_emp_entrada ON marcaje (empleado_id, entrada);` *(no `(entrada::date)`: el cast no es `IMMUTABLE`).*
 
 ### 4.4 Catálogos de producto y modificadores
 
@@ -250,24 +226,17 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `sucursal_id` | `UUID FK → sucursal` | |
 | `categoria_id` | `UUID FK → categoria` | `ON DELETE RESTRICT` |
 | `nombre` | `VARCHAR(120)` | |
-| `precio` | `NUMERIC(12,4)` | `CHECK (precio >= 0)` |
-| `imagen_drive_id` | `VARCHAR(100) NULL` | File ID de Drive. Ver §8. |
-| `imagen_url` | `VARCHAR(500) NULL` | caché derivable del `drive_id` |
+| `precio` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
+| `imagen_drive_id` | `VARCHAR(100) NULL` | §8 |
+| `imagen_url` | `VARCHAR(500) NULL` | caché derivable |
 | `estacion` | `VARCHAR(20)` | `CHECK (estacion IN ('Barra','Cocina'))` |
 | `destacado` | `BOOLEAN` | `DEFAULT false` |
 | `activo` | `BOOLEAN` | `DEFAULT true` |
+| — | | `UNIQUE (id, sucursal_id)` (FK compuesta) |
 
 > `CREATE UNIQUE INDEX uq_producto_nombre ON producto (sucursal_id, nombre) WHERE deleted_at IS NULL;`
-> `ALTER TABLE producto ADD UNIQUE (id, sucursal_id);` — para FKs compuestas.
 
-**`grupo_modificador`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | |
-| `nombre` | `VARCHAR(80)` | |
-| `requerido` | `BOOLEAN` | `DEFAULT false` |
-| `multiple` | `BOOLEAN` | `DEFAULT false` |
+**`grupo_modificador`** — `sucursal_id`, `nombre VARCHAR(80)`, `requerido BOOLEAN`, `multiple BOOLEAN`.
 
 **`opcion_modificador`**
 
@@ -275,14 +244,9 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 |---|---|---|
 | `grupo_modificador_id` | `UUID FK → grupo_modificador` | `ON DELETE CASCADE` |
 | `nombre` | `VARCHAR(80)` | |
-| `precio_extra` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (precio_extra >= 0)` |
+| `precio_extra` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (>= 0)` |
 
-**`producto_grupo_modificador`** — N:M. PK compuesta `(producto_id, grupo_modificador_id)`.
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `producto_id` | `UUID FK → producto` | `ON DELETE CASCADE` |
-| `grupo_modificador_id` | `UUID FK → grupo_modificador` | `ON DELETE CASCADE` |
+**`producto_grupo_modificador`** — PK `(producto_id, grupo_modificador_id)`, ambas FK `ON DELETE CASCADE`.
 
 ### 4.5 Recetario / costeo
 
@@ -291,8 +255,8 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | Columna | Tipo | Notas |
 |---|---|---|
 | `producto_id` | `UUID FK → producto` | `UNIQUE`, `ON DELETE CASCADE` |
-| `rendimiento` | `NUMERIC(12,4)` | `CHECK (rendimiento > 0)` |
-| `costo_calculado` | `NUMERIC(12,4)` | caché derivado de insumos |
+| `rendimiento` | `NUMERIC(12,4)` | `CHECK (> 0)` |
+| `costo_calculado` | `NUMERIC(12,4)` | caché |
 
 **`receta_detalle`**
 
@@ -300,20 +264,13 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 |---|---|---|
 | `receta_id` | `UUID FK → receta` | `ON DELETE CASCADE` |
 | `insumo_id` | `UUID FK → insumo` | `ON DELETE RESTRICT` |
-| `cantidad` | `NUMERIC(12,4)` | `CHECK (cantidad > 0)`, en unidad base del insumo |
-| `merma_pct` | `NUMERIC(5,2)` | `DEFAULT 0`, `CHECK (merma_pct >= 0 AND merma_pct < 100)` |
-
-> `UNIQUE (receta_id, insumo_id)` — evita el mismo insumo dos veces en la receta.
+| `cantidad` | `NUMERIC(12,4)` | `CHECK (> 0)` |
+| `merma_pct` | `NUMERIC(5,2)` | `DEFAULT 0`, `CHECK (>=0 AND <100)` |
+| — | | `UNIQUE (receta_id, insumo_id)` |
 
 ### 4.6 Inventario
 
-**`unidad_medida`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `nombre` | `VARCHAR(40)` | |
-| `abreviatura` | `VARCHAR(10)` | `UNIQUE` |
-| `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('Peso','Volumen','Unidad'))` |
+**`unidad_medida`** — `nombre`, `abreviatura VARCHAR(10) UNIQUE`, `tipo CHECK IN ('Peso','Volumen','Unidad')`.
 
 **`insumo`**
 
@@ -325,51 +282,42 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `categoria` | `VARCHAR(60) NULL` | |
 | `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('materia_prima','elaborado','terminado'))` |
 | `costo_promedio` | `NUMERIC(12,4)` | `DEFAULT 0`, caché (promedio ponderado) |
-| `stock_minimo` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (stock_minimo >= 0)` |
-| `punto_reorden` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (punto_reorden >= 0)` |
+| `stock_minimo` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (>= 0)` |
+| `punto_reorden` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (>= 0)` |
 | `activo` | `BOOLEAN` | `DEFAULT true` |
+| — | | `UNIQUE (id, sucursal_id)` (FK compuesta) |
 
-> `ALTER TABLE insumo ADD UNIQUE (id, sucursal_id);` — para FKs compuestas de existencia/movimiento.
-
-**`existencia`** — Stock actual por (insumo, sucursal). **Caché**; fuente de verdad = `movimiento_inventario`.
+**`existencia`** — Caché; fuente de verdad = `movimiento_inventario`.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `insumo_id` | `UUID FK → insumo` | |
 | `sucursal_id` | `UUID FK → sucursal` | |
-| `cantidad` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (cantidad >= 0)` |
-| — | | `UNIQUE (insumo_id, sucursal_id)` |
-| — | | `FOREIGN KEY (insumo_id, sucursal_id) REFERENCES insumo (id, sucursal_id)` |
+| `cantidad` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (>= 0)` |
+| — | | `UNIQUE (insumo_id, sucursal_id)`; `FOREIGN KEY (insumo_id, sucursal_id) REFERENCES insumo (id, sucursal_id)` |
 
-**`movimiento_inventario`** — Kardex inmutable. **No** se borra. FKs tipadas (sin polimorfismo).
+**`movimiento_inventario`** — Kardex inmutable. FKs tipadas (sin polimorfismo).
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `insumo_id` | `UUID FK → insumo` | |
 | `sucursal_id` | `UUID FK → sucursal` | |
 | `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('Entrada','Salida','Ajuste','Merma'))` |
-| `cantidad` | `NUMERIC(12,4)` | positivo entra, negativo sale (`CHECK (cantidad <> 0)`) |
-| `saldo` | `NUMERIC(12,4)` | saldo corrido tras el movimiento; `CHECK (saldo >= 0)` |
-| `costo_unitario` | `NUMERIC(12,4)` | `CHECK (costo_unitario >= 0)` |
-| `motivo` | `VARCHAR(120) NULL` | obligatorio en `Merma`/`Ajuste` (ver `CHECK` abajo) |
-| `orden_compra_id` | `UUID FK → orden_compra NULL` | origen (reemplaza polimorfismo) |
+| `cantidad` | `NUMERIC(12,4)` | `CHECK (cantidad <> 0)`; + entra, − sale |
+| `saldo` | `NUMERIC(12,4)` | `CHECK (saldo >= 0)` |
+| `costo_unitario` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
+| `motivo` | `VARCHAR(120) NULL` | obligatorio en Merma/Ajuste (CHECK abajo) |
+| `orden_compra_id` | `UUID FK → orden_compra NULL` | origen |
 | `factura_id` | `UUID FK → factura NULL` | origen |
 | `conteo_fisico_id` | `UUID FK → conteo_fisico NULL` | origen |
-| `usuario_id` | `UUID FK → usuario NULL` | quién lo registró |
+| `usuario_id` | `UUID FK → usuario NULL` | |
 | — | | `CHECK (num_nonnulls(orden_compra_id, factura_id, conteo_fisico_id) <= 1)` |
 | — | | `CHECK (tipo NOT IN ('Merma','Ajuste') OR motivo IS NOT NULL)` |
 | — | | `FOREIGN KEY (insumo_id, sucursal_id) REFERENCES insumo (id, sucursal_id)` |
 
-> Índices: `CREATE INDEX ix_mov_inv_insumo_fecha ON movimiento_inventario (insumo_id, created_at);` + índices en cada FK de origen.
+> `CREATE INDEX ix_mov_inv_insumo_fecha ON movimiento_inventario (insumo_id, created_at);` + índice por cada FK de origen.
 
-**`conteo_fisico`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | |
-| `usuario_id` | `UUID FK → usuario` | |
-| `fecha` | `TIMESTAMPTZ` | `DEFAULT now()` |
-| `estado` | `VARCHAR(20)` | `CHECK (estado IN ('borrador','aplicado'))` |
+**`conteo_fisico`** — `sucursal_id`, `usuario_id`, `fecha TIMESTAMPTZ DEFAULT now()`, `estado CHECK IN ('borrador','aplicado')`.
 
 **`conteo_detalle`**
 
@@ -378,24 +326,15 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `conteo_fisico_id` | `UUID FK → conteo_fisico` | `ON DELETE CASCADE` |
 | `insumo_id` | `UUID FK → insumo` | `ON DELETE RESTRICT` |
 | `cantidad_teorica` | `NUMERIC(12,4)` | |
-| `cantidad_fisica` | `NUMERIC(12,4)` | `CHECK (cantidad_fisica >= 0)` |
+| `cantidad_fisica` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
 | `diferencia` | `NUMERIC(12,4)` | `GENERATED ALWAYS AS (cantidad_fisica - cantidad_teorica) STORED` |
-
-> `UNIQUE (conteo_fisico_id, insumo_id)`.
+| — | | `UNIQUE (conteo_fisico_id, insumo_id)` |
 
 ### 4.7 Compras
 
-**`proveedor`**
+**`proveedor`** — `sucursal_id`, `nombre VARCHAR(120)`, `contacto NULL`, `telefono NULL`, `email CITEXT NULL`.
 
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | |
-| `nombre` | `VARCHAR(120)` | |
-| `contacto` | `VARCHAR(120) NULL` | |
-| `telefono` | `VARCHAR(30) NULL` | |
-| `email` | `CITEXT NULL` | |
-
-**`orden_compra`** — Cabecera. Folios consecutivos con bloqueo de fila (§7).
+**`orden_compra`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -405,7 +344,7 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `folio` | `VARCHAR(20)` | `UNIQUE (sucursal_id, folio)` |
 | `fecha` | `DATE` | `DEFAULT CURRENT_DATE` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('borrador','enviada','recibida','cancelada'))` |
-| `total` | `NUMERIC(12,4)` | `DEFAULT 0`, caché de detalles, `CHECK (total >= 0)` |
+| `total` | `NUMERIC(12,4)` | `DEFAULT 0`, caché, `CHECK (>= 0)` |
 
 **`orden_compra_detalle`**
 
@@ -413,19 +352,13 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 |---|---|---|
 | `orden_compra_id` | `UUID FK → orden_compra` | `ON DELETE CASCADE` |
 | `insumo_id` | `UUID FK → insumo` | `ON DELETE RESTRICT` |
-| `cantidad` | `NUMERIC(12,4)` | `CHECK (cantidad > 0)` |
-| `costo_unitario` | `NUMERIC(12,4)` | congelado, `CHECK (costo_unitario >= 0)` |
+| `cantidad` | `NUMERIC(12,4)` | `CHECK (> 0)` |
+| `costo_unitario` | `NUMERIC(12,4)` | congelado, `CHECK (>= 0)` |
 | `subtotal` | `NUMERIC(12,4)` | `GENERATED ALWAYS AS (cantidad * costo_unitario) STORED` |
 
-### 4.8 Salón: zonas, mesas y reservaciones
+### 4.8 Salón
 
-**`zona`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | |
-| `nombre` | `VARCHAR(60)` | |
-| — | | `UNIQUE (id, sucursal_id)` — para FK compuesta de `mesa` |
+**`zona`** — `sucursal_id`, `nombre VARCHAR(60)`, `UNIQUE (id, sucursal_id)`.
 
 **`mesa`**
 
@@ -434,32 +367,31 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `zona_id` | `UUID FK → zona` | `ON DELETE RESTRICT` |
 | `sucursal_id` | `UUID FK → sucursal` | |
 | `nombre` | `VARCHAR(40)` | |
-| `capacidad` | `SMALLINT` | `CHECK (capacidad > 0)` |
+| `capacidad` | `SMALLINT` | `CHECK (> 0)` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('libre','ocupada','cuenta','reservada'))` |
-| — | | `FOREIGN KEY (zona_id, sucursal_id) REFERENCES zona (id, sucursal_id)` |
-| — | | `UNIQUE (id, sucursal_id)` — para FK compuesta de `cuenta` |
+| — | | `FOREIGN KEY (zona_id, sucursal_id) REFERENCES zona (id, sucursal_id)`; `UNIQUE (id, sucursal_id)` |
 
-**`reservacion`** — Con anti-solape (`btree_gist`).
+**`reservacion`** — Anti-solape con `EXCLUDE`.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `mesa_id` | `UUID FK → mesa` | |
 | `cliente_id` | `UUID FK → cliente NULL` | |
-| `inicio` | `TIMESTAMPTZ` | antes `fecha_hora` |
+| `inicio` | `TIMESTAMPTZ` | |
 | `fin` | `TIMESTAMPTZ` | `CHECK (fin > inicio)` |
 | `periodo` | `tstzrange` | `GENERATED ALWAYS AS (tstzrange(inicio, fin)) STORED` |
-| `personas` | `SMALLINT` | `CHECK (personas > 0)` |
+| `personas` | `SMALLINT` | `CHECK (> 0)` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('confirmada','cumplida','cancelada'))` |
 | — | | `EXCLUDE USING gist (mesa_id WITH =, periodo WITH &&) WHERE (estado = 'confirmada')` |
 
-### 4.9 Operación de venta: cuenta y comandas
+### 4.9 Operación de venta
 
-**`cuenta`** — Cuenta abierta de una mesa o venta de mostrador/llevar.
+**`cuenta`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `sucursal_id` | `UUID FK → sucursal` | |
-| `mesa_id` | `UUID FK → mesa NULL` | NULL en mostrador/llevar |
+| `mesa_id` | `UUID FK → mesa NULL` | NULL en mostrador/llevar/online |
 | `mesero_id` | `UUID FK → empleado NULL` | |
 | `cliente_id` | `UUID FK → cliente NULL` | |
 | `tipo_venta` | `VARCHAR(20)` | `CHECK (tipo_venta IN ('mesa','mostrador','llevar'))` |
@@ -468,7 +400,7 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | — | | `CHECK (tipo_venta <> 'mesa' OR mesa_id IS NOT NULL)` |
 | — | | `FOREIGN KEY (mesa_id, sucursal_id) REFERENCES mesa (id, sucursal_id)` |
 | — | | `FOREIGN KEY (mesero_id, sucursal_id) REFERENCES empleado (id, sucursal_id)` |
-| — | | `UNIQUE (id, sucursal_id)` — para FK compuesta de `factura` |
+| — | | `UNIQUE (id, sucursal_id)` (FK compuesta de `factura` y puente de `pedido`) |
 
 **`comanda`**
 
@@ -478,11 +410,11 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `folio` | `VARCHAR(20)` | `UNIQUE (cuenta_id, folio)` |
 | `estacion` | `VARCHAR(20)` | `CHECK (estacion IN ('Barra','Cocina'))` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('pendiente','preparacion','listo','entregada'))` |
-| `origen` | `VARCHAR(40) NULL` | Mesa 4 / Mostrador / Para llevar |
+| `origen` | `VARCHAR(40) NULL` | |
 | `creada_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
-| `lista_en` | `TIMESTAMPTZ NULL` | semáforo de tiempos |
+| `lista_en` | `TIMESTAMPTZ NULL` | |
 
-> Índice: `CREATE INDEX ix_comanda_estado_estacion ON comanda (estado, estacion);`
+> `CREATE INDEX ix_comanda_estado_estacion ON comanda (estado, estacion);`
 
 **`comanda_detalle`**
 
@@ -490,92 +422,82 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 |---|---|---|
 | `comanda_id` | `UUID FK → comanda` | `ON DELETE CASCADE` |
 | `producto_id` | `UUID FK → producto` | `ON DELETE RESTRICT` |
-| `cantidad` | `SMALLINT` | `CHECK (cantidad > 0)` |
-| `nota` | `VARCHAR(200) NULL` | indicaciones libres para cocina |
-| — | | `UNIQUE (id)` (PK) usable como destino de trazabilidad desde factura |
+| `cantidad` | `SMALLINT` | `CHECK (> 0)` |
+| `nota` | `VARCHAR(200) NULL` | |
 
 ### 4.10 Facturación
 
-**`impuesto`**
+**`impuesto`** — `nombre`, `tasa NUMERIC(5,2) CHECK (>=0)`, `incluido_en_precio BOOLEAN` (IVA incluido en GT).
 
-| Columna | Tipo | Notas |
-|---|---|---|
-| `nombre` | `VARCHAR(40)` | |
-| `tasa` | `NUMERIC(5,2)` | `CHECK (tasa >= 0)` |
-| `incluido_en_precio` | `BOOLEAN` | IVA incluido en Guatemala |
+**`forma_pago`** — `nombre VARCHAR(40)`, `requiere_referencia BOOLEAN DEFAULT false`.
 
-**`forma_pago`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `nombre` | `VARCHAR(40)` | |
-| `requiere_referencia` | `BOOLEAN` | `DEFAULT false` |
-
-**`factura`** — Documento fiscal. **No** se borra: se cancela con nota de crédito. **Particionable** por rango de fecha (§7).
+**`factura`** — Documento fiscal. No se borra: se cancela. Candidata a particionar (§9).
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `sucursal_id` | `UUID FK → sucursal` | |
 | `cuenta_id` | `UUID FK → cuenta NULL` | origen operativo |
 | `cliente_id` | `UUID FK → cliente NULL` | |
-| `caja_sesion_id` | `UUID FK → caja_sesion` | |
-| `usuario_id` | `UUID FK → usuario` | cajero |
+| `caja_sesion_id` | `UUID FK → caja_sesion NULL` | **nullable** (online no tiene caja) |
+| `usuario_id` | `UUID FK → usuario` | cajero / usuario emisor |
+| `origen` | `VARCHAR(20)` | `DEFAULT 'pos'`, `CHECK (origen IN ('pos','online'))` |
 | `serie` | `VARCHAR(10)` | serie fiscal (FEL) |
 | `folio` | `BIGINT` | `UNIQUE (sucursal_id, serie, folio)`, `CHECK (folio > 0)` |
-| `tipo_venta` | `VARCHAR(20)` | `CHECK (tipo_venta IN ('mesa','mostrador','llevar'))` |
-| `subtotal` | `NUMERIC(12,4)` | `CHECK (subtotal >= 0)` |
-| `descuento` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (descuento >= 0)` |
-| `impuesto_total` | `NUMERIC(12,4)` | `CHECK (impuesto_total >= 0)` |
-| `total` | `NUMERIC(12,2)` | **2 decimales** (importe cobrable), `CHECK (total >= 0)` |
+| `tipo_venta` | `VARCHAR(20)` | `CHECK (tipo_venta IN ('mesa','mostrador','llevar','delivery','pickup'))` |
+| `subtotal` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
+| `descuento` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (>= 0)` |
+| `impuesto_total` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
+| `total` | `NUMERIC(12,2)` | importe cobrable, `CHECK (>= 0)` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('emitida','cancelada'))` |
 | `emitida_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
+| — | | `CHECK (caja_sesion_id IS NOT NULL OR origen = 'online')` |
 | — | | `FOREIGN KEY (caja_sesion_id, sucursal_id) REFERENCES caja_sesion (id, sucursal_id)` |
 | — | | `FOREIGN KEY (cuenta_id, sucursal_id) REFERENCES cuenta (id, sucursal_id)` |
 
-> Se **eliminó `promocion_id`** (ver `promocion_aplicacion`). Índice: `CREATE INDEX ix_factura_suc_fecha ON factura (sucursal_id, emitida_en);`
+> Sin `promocion_id` (ver `promocion_aplicacion`). `CREATE INDEX ix_factura_suc_fecha ON factura (sucursal_id, emitida_en);`
 
-**`factura_detalle`** — Líneas con precio **congelado**.
+**`factura_detalle`** — Precio congelado.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `factura_id` | `UUID FK → factura` | `ON DELETE CASCADE` |
 | `producto_id` | `UUID FK → producto` | `ON DELETE RESTRICT` |
-| `comanda_detalle_id` | `UUID FK → comanda_detalle NULL` | **trazabilidad** cocina→venta; `ON DELETE SET NULL` |
+| `comanda_detalle_id` | `UUID FK → comanda_detalle NULL` | trazabilidad; `ON DELETE SET NULL` |
 | `descripcion` | `VARCHAR(160)` | congelada |
-| `cantidad` | `NUMERIC(12,4)` | `CHECK (cantidad > 0)` |
-| `precio_unitario` | `NUMERIC(12,4)` | congelado, `CHECK (precio_unitario >= 0)` (0 si cortesía) |
+| `cantidad` | `NUMERIC(12,4)` | `CHECK (> 0)` |
+| `precio_unitario` | `NUMERIC(12,4)` | congelado, `CHECK (>= 0)` |
 | `impuesto_tasa` | `NUMERIC(5,2)` | congelada |
 | `subtotal` | `NUMERIC(12,4)` | `GENERATED ALWAYS AS (cantidad * precio_unitario) STORED` |
 | `es_cortesia` | `BOOLEAN` | `DEFAULT false`; `CHECK (NOT es_cortesia OR precio_unitario = 0)` |
 
-**`factura_detalle_modificador`** — Modificadores con precio congelado.
+**`factura_detalle_modificador`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `factura_detalle_id` | `UUID FK → factura_detalle` | `ON DELETE CASCADE` |
-| `opcion_modificador_id` | `UUID FK → opcion_modificador NULL` | `ON DELETE SET NULL` (pudo borrarse) |
+| `opcion_modificador_id` | `UUID FK → opcion_modificador NULL` | `ON DELETE SET NULL` |
 | `nombre` | `VARCHAR(80)` | congelado |
-| `precio_extra` | `NUMERIC(12,4)` | congelado, `CHECK (precio_extra >= 0)` |
+| `precio_extra` | `NUMERIC(12,4)` | congelado, `CHECK (>= 0)` |
 
-**`pago`** — Cobro mixto.
+**`pago`** — Cobro presencial (POS). Para pago online ver `transaccion_pago` (§4.15).
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `factura_id` | `UUID FK → factura` | `ON DELETE CASCADE` |
 | `forma_pago_id` | `UUID FK → forma_pago` | `ON DELETE RESTRICT` |
-| `monto` | `NUMERIC(12,4)` | `CHECK (monto > 0)` |
-| `recibido` | `NUMERIC(12,4) NULL` | efectivo entregado |
+| `monto` | `NUMERIC(12,4)` | `CHECK (> 0)` |
+| `recibido` | `NUMERIC(12,4) NULL` | |
 | `cambio` | `NUMERIC(12,4)` | `GENERATED ALWAYS AS (COALESCE(recibido,0) - monto) STORED` |
-| `referencia` | `VARCHAR(60) NULL` | voucher/transferencia |
+| `referencia` | `VARCHAR(60) NULL` | |
 
-**`nota_credito`** — Devolución / cancelación. **No** se borra.
+**`nota_credito`** — No se borra.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `factura_id` | `UUID FK → factura` | `ON DELETE RESTRICT` |
 | `usuario_id` | `UUID FK → usuario` | |
 | `motivo` | `VARCHAR(200)` | obligatorio |
-| `monto` | `NUMERIC(12,2)` | `CHECK (monto > 0)` |
+| `monto` | `NUMERIC(12,2)` | `CHECK (> 0)` |
 | `emitida_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
 
 ### 4.11 Promociones
@@ -587,14 +509,12 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `sucursal_id` | `UUID FK → sucursal` | |
 | `nombre` | `VARCHAR(120)` | |
 | `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('porcentaje','monto','2x1','combo'))` |
-| `valor` | `NUMERIC(12,4)` | `CHECK (valor >= 0)`; % o Q según tipo |
+| `valor` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
 | `vigencia_desde` | `TIMESTAMPTZ NULL` | |
-| `vigencia_hasta` | `TIMESTAMPTZ NULL` | `CHECK (vigencia_hasta IS NULL OR vigencia_hasta > vigencia_desde)` |
+| `vigencia_hasta` | `TIMESTAMPTZ NULL` | `CHECK (hasta IS NULL OR desde IS NULL OR hasta > desde)` |
 | `activa` | `BOOLEAN` | `DEFAULT true` |
 
-> Se elimina `aplica_en` (texto libre). El objetivo se estructura en `promocion_objetivo`.
-
-**`promocion_objetivo`** — A qué producto(s)/categoría(s) aplica la promo.
+**`promocion_objetivo`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -603,60 +523,52 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `categoria_id` | `UUID FK → categoria NULL` | |
 | — | | `CHECK (num_nonnulls(producto_id, categoria_id) = 1)` |
 
-**`combo_componente`** — Productos que integran una promo tipo `combo`.
+**`combo_componente`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `promocion_id` | `UUID FK → promocion` | `ON DELETE CASCADE` |
 | `producto_id` | `UUID FK → producto` | `ON DELETE RESTRICT` |
-| `cantidad` | `SMALLINT` | `CHECK (cantidad > 0)` |
+| `cantidad` | `SMALLINT` | `CHECK (> 0)` |
 
-**`promocion_aplicacion`** — Historial de cada aplicación (única fuente de verdad de promos por factura).
+**`promocion_aplicacion`** — Única fuente de promos por factura.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `promocion_id` | `UUID FK → promocion` | `ON DELETE RESTRICT` |
 | `factura_id` | `UUID FK → factura` | `ON DELETE CASCADE` |
-| `descuento_aplicado` | `NUMERIC(12,4)` | `CHECK (descuento_aplicado >= 0)` |
+| `descuento_aplicado` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
 
 ### 4.12 Caja
 
-**`caja`** — Terminal/cajón físico (opcional pero recomendado si hay >1 punto de cobro).
+**`caja`** — Terminal físico. `sucursal_id`, `nombre VARCHAR(40)`, `activa BOOLEAN`, `UNIQUE (id, sucursal_id)`.
+
+**`caja_sesion`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `sucursal_id` | `UUID FK → sucursal` | |
-| `nombre` | `VARCHAR(40)` | "Caja 1", "Terminal Barra" |
-| `activa` | `BOOLEAN` | `DEFAULT true` |
-| — | | `UNIQUE (id, sucursal_id)` |
-
-**`caja_sesion`** — Apertura/cierre de un turno (fondo, arqueo, corte X/Z).
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | |
-| `caja_id` | `UUID FK → caja NULL` | terminal física |
+| `caja_id` | `UUID FK → caja NULL` | |
 | `usuario_id` | `UUID FK → usuario` | cajero |
-| `fondo_apertura` | `NUMERIC(12,4)` | `CHECK (fondo_apertura >= 0)` |
-| `efectivo_esperado` | `NUMERIC(12,4) NULL` | calculado al cierre |
-| `efectivo_contado` | `NUMERIC(12,4) NULL` | arqueo ciego |
+| `fondo_apertura` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
+| `efectivo_esperado` | `NUMERIC(12,4) NULL` | |
+| `efectivo_contado` | `NUMERIC(12,4) NULL` | |
 | `diferencia` | `NUMERIC(12,4) NULL` | `GENERATED ALWAYS AS (efectivo_contado - efectivo_esperado) STORED` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('abierta','cerrada'))` |
 | `abierta_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
 | `cerrada_en` | `TIMESTAMPTZ NULL` | |
-| — | | `UNIQUE (id, sucursal_id)` — para FK compuesta de `factura` |
-| — | | `FOREIGN KEY (caja_id, sucursal_id) REFERENCES caja (id, sucursal_id)` |
+| — | | `UNIQUE (id, sucursal_id)`; `FOREIGN KEY (caja_id, sucursal_id) REFERENCES caja (id, sucursal_id)` |
 
-> Una sola sesión abierta por cajero/sucursal: `CREATE UNIQUE INDEX uq_caja_abierta ON caja_sesion (sucursal_id, usuario_id) WHERE estado = 'abierta';`
+> `CREATE UNIQUE INDEX uq_caja_abierta ON caja_sesion (sucursal_id, usuario_id) WHERE estado = 'abierta';`
 
-**`caja_movimiento`** — Movimientos manuales (apertura, ingreso, retiro).
+**`caja_movimiento`**
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `caja_sesion_id` | `UUID FK → caja_sesion` | `ON DELETE CASCADE` |
 | `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('Apertura','Ingreso','Retiro'))` |
 | `concepto` | `VARCHAR(120)` | |
-| `monto` | `NUMERIC(12,4)` | `CHECK (monto > 0)` |
+| `monto` | `NUMERIC(12,4)` | `CHECK (> 0)` |
 | `registrado_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
 
 ### 4.13 Clientes y fidelización
@@ -670,18 +582,12 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `nit` | `VARCHAR(20) NULL` | |
 | `telefono` | `VARCHAR(30) NULL` | |
 | `email` | `CITEXT NULL` | |
-| `puntos` | `INTEGER` | `DEFAULT 0`, **caché**, `CHECK (puntos >= 0)` |
-| `visitas` | `INTEGER` | `DEFAULT 0`, `CHECK (visitas >= 0)` |
+| `puntos` | `INTEGER` | `DEFAULT 0`, caché, `CHECK (>= 0)` |
+| `visitas` | `INTEGER` | `DEFAULT 0`, `CHECK (>= 0)` |
 
 > `CREATE UNIQUE INDEX uq_cliente_nit ON cliente (sucursal_id, nit) WHERE nit IS NOT NULL AND nit <> 'CF';`
 
-**`config_lealtad`** — Una fila por sucursal.
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sucursal_id` | `UUID FK → sucursal` | `UNIQUE` |
-| `quetzales_por_punto` | `NUMERIC(12,4)` | `CHECK (quetzales_por_punto > 0)` |
-| `activo` | `BOOLEAN` | `DEFAULT true` |
+**`config_lealtad`** — 1 fila/sucursal. `sucursal_id UNIQUE`, `quetzales_por_punto NUMERIC(12,4) CHECK (>0)`, `activo BOOLEAN`.
 
 **`recompensa`**
 
@@ -690,34 +596,29 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `sucursal_id` | `UUID FK → sucursal` | |
 | `nombre` | `VARCHAR(120)` | |
 | `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('producto','descuento_monto','descuento_pct'))` |
-| `costo_puntos` | `INTEGER` | `CHECK (costo_puntos > 0)` |
-| `producto_id` | `UUID FK → producto NULL` | solo tipo `producto` |
-| `valor` | `NUMERIC(12,4) NULL` | Q o % (tipos `descuento_*`) |
+| `costo_puntos` | `INTEGER` | `CHECK (> 0)` |
+| `producto_id` | `UUID FK → producto NULL` | |
+| `valor` | `NUMERIC(12,4) NULL` | |
 | `activa` | `BOOLEAN` | `DEFAULT true` |
-| — | | `CHECK ((tipo = 'producto' AND producto_id IS NOT NULL AND valor IS NULL) OR (tipo LIKE 'descuento%' AND valor IS NOT NULL AND producto_id IS NULL))` |
+| — | | `CHECK ((tipo='producto' AND producto_id IS NOT NULL AND valor IS NULL) OR (tipo LIKE 'descuento%' AND valor IS NOT NULL AND producto_id IS NULL))` |
 
-**`movimiento_lealtad`** — Ledger inmutable de puntos. **No** se borra. Fuente de verdad de `cliente.puntos`.
+**`movimiento_lealtad`** — Ledger inmutable de puntos.
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `cliente_id` | `UUID FK → cliente` | `ON DELETE CASCADE` |
-| `factura_id` | `UUID FK → factura NULL` | venta que originó |
-| `recompensa_id` | `UUID FK → recompensa NULL` | solo en canjes |
+| `factura_id` | `UUID FK → factura NULL` | |
+| `recompensa_id` | `UUID FK → recompensa NULL` | |
 | `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('acumula','canjea'))` |
 | `puntos` | `INTEGER` | `CHECK ((tipo='acumula' AND puntos>0) OR (tipo='canjea' AND puntos<0))` |
 | `descripcion` | `VARCHAR(120)` | |
 
-> Índice: `CREATE INDEX ix_mov_lealtad_cliente ON movimiento_lealtad (cliente_id, created_at);`
-
-**Regla de canje con inventario:** al canjear una recompensa `producto`, la línea de factura se marca `es_cortesia = true` (`precio_unitario = 0`), se genera `movimiento_lealtad` tipo `canjea`, y su `movimiento_inventario` de tipo `Salida` con `motivo = 'Canje de lealtad'` ejecutando la explosión de receta. El consumo queda descontado y trazable aunque no se cobre.
+> `CREATE INDEX ix_mov_lealtad_cliente ON movimiento_lealtad (cliente_id, created_at);`
+> **Canje con inventario:** recompensa `producto` → línea `es_cortesia=true` (`precio_unitario=0`) + `movimiento_lealtad canjea` + `movimiento_inventario Salida` con `motivo='Canje de lealtad'` (explosión de receta). Consumo descontado y trazable aunque no se cobre.
 
 ### 4.14 Gastos
 
-**`categoria_gasto`**
-
-| Columna | Tipo | Notas |
-|---|---|---|
-| `nombre` | `VARCHAR(60)` | `UNIQUE` |
+**`categoria_gasto`** — `nombre VARCHAR(60) UNIQUE`.
 
 **`gasto`**
 
@@ -728,33 +629,154 @@ En el diccionario se omiten estas columnas por brevedad, excepto cuando el borra
 | `proveedor_id` | `UUID FK → proveedor NULL` | |
 | `usuario_id` | `UUID FK → usuario` | |
 | `concepto` | `VARCHAR(160)` | |
-| `monto` | `NUMERIC(12,4)` | `CHECK (monto > 0)` |
+| `monto` | `NUMERIC(12,4)` | `CHECK (> 0)` |
 | `metodo` | `VARCHAR(20)` | `CHECK (metodo IN ('Efectivo','Transferencia','Tarjeta'))` |
 | `estado` | `VARCHAR(20)` | `CHECK (estado IN ('pagado','pendiente'))` |
 | `fecha` | `DATE` | `DEFAULT CURRENT_DATE` |
+
+### 4.15 Pedidos en línea (módulo 17)
+
+**`cliente_credencial`** — Login del cliente online. 1:1 con `cliente`. Ausencia = *guest*.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `cliente_id` | `UUID FK → cliente` | `UNIQUE`, `ON DELETE CASCADE` |
+| `email` | `CITEXT` | `UNIQUE` (login) |
+| `password_hash` | `VARCHAR(255)` | Argon2 |
+| `email_verificado` | `BOOLEAN` | `DEFAULT false` |
+| `telefono_verificado` | `BOOLEAN` | `DEFAULT false` |
+| `activo` | `BOOLEAN` | `DEFAULT true` |
+
+> Separada de `usuario` (staff). Cliente y empleado son sujetos distintos.
+
+**`cliente_direccion`** — Direcciones de entrega guardadas.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `cliente_id` | `UUID FK → cliente` | `ON DELETE CASCADE` |
+| `etiqueta` | `VARCHAR(40)` | "Casa", "Oficina" |
+| `direccion` | `VARCHAR(200)` | |
+| `referencia` | `VARCHAR(200) NULL` | |
+| `lat` | `NUMERIC(9,6) NULL` | |
+| `lng` | `NUMERIC(9,6) NULL` | |
+| `es_predeterminada` | `BOOLEAN` | `DEFAULT false` |
+| — | | `CREATE UNIQUE INDEX uq_dir_predet ON cliente_direccion (cliente_id) WHERE es_predeterminada;` |
+
+**`pedido`** — Cabecera del pedido online. Documento con ciclo de vida propio.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `sucursal_id` | `UUID FK → sucursal` | local que atiende |
+| `cliente_id` | `UUID FK → cliente` | guest o registrado |
+| `direccion_id` | `UUID FK → cliente_direccion NULL` | requerida si `tipo='delivery'` |
+| `cuenta_id` | `UUID FK → cuenta NULL` | puente al KDS (opcional) |
+| `factura_id` | `UUID FK → factura NULL` | se llena al facturar |
+| `folio` | `VARCHAR(20)` | `UNIQUE (sucursal_id, folio)` |
+| `canal` | `VARCHAR(20)` | `CHECK (canal IN ('web','app'))` |
+| `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('delivery','pickup'))` |
+| `estado` | `VARCHAR(20)` | `CHECK (estado IN ('recibido','confirmado','en_preparacion','listo','en_camino','entregado','cancelado','rechazado'))` |
+| `pago_estado` | `VARCHAR(20)` | `CHECK (pago_estado IN ('pendiente','pagado','reembolsado','fallido'))`, caché de `transaccion_pago` |
+| `subtotal` | `NUMERIC(12,4)` | `CHECK (>= 0)` |
+| `descuento` | `NUMERIC(12,4)` | `DEFAULT 0` |
+| `costo_envio` | `NUMERIC(12,4)` | `DEFAULT 0`, `CHECK (>= 0)` |
+| `impuesto_total` | `NUMERIC(12,4)` | |
+| `total` | `NUMERIC(12,2)` | `CHECK (>= 0)` |
+| `programado_para` | `TIMESTAMPTZ NULL` | NULL = lo antes posible |
+| `notas` | `VARCHAR(300) NULL` | |
+| `recibido_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
+| — | | `CHECK (tipo <> 'delivery' OR direccion_id IS NOT NULL)` |
+| — | | `CHECK (estado <> 'en_camino' OR tipo = 'delivery')` |
+| — | | `FOREIGN KEY (cuenta_id, sucursal_id) REFERENCES cuenta (id, sucursal_id)` |
+
+**`pedido_detalle`** — Precio congelado al ordenar.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `pedido_id` | `UUID FK → pedido` | `ON DELETE CASCADE` |
+| `producto_id` | `UUID FK → producto` | `ON DELETE RESTRICT` |
+| `descripcion` | `VARCHAR(160)` | congelada |
+| `cantidad` | `SMALLINT` | `CHECK (> 0)` |
+| `precio_unitario` | `NUMERIC(12,4)` | congelado, `CHECK (>= 0)` |
+| `impuesto_tasa` | `NUMERIC(5,2)` | congelada |
+| `subtotal` | `NUMERIC(12,4)` | `GENERATED ALWAYS AS (cantidad * precio_unitario) STORED` |
+| `nota` | `VARCHAR(200) NULL` | |
+
+**`pedido_detalle_modificador`**
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `pedido_detalle_id` | `UUID FK → pedido_detalle` | `ON DELETE CASCADE` |
+| `opcion_modificador_id` | `UUID FK → opcion_modificador NULL` | `ON DELETE SET NULL` |
+| `nombre` | `VARCHAR(80)` | congelado |
+| `precio_extra` | `NUMERIC(12,4)` | congelado, `CHECK (>= 0)` |
+
+**`pedido_estado_historial`** — Tracking inmutable.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `pedido_id` | `UUID FK → pedido` | `ON DELETE CASCADE` |
+| `estado` | `VARCHAR(20)` | estado al que pasó |
+| `nota` | `VARCHAR(200) NULL` | |
+| `usuario_id` | `UUID FK → usuario NULL` | NULL si automático |
+| `registrado_en` | `TIMESTAMPTZ` | `DEFAULT now()` |
+
+**`entrega`** — 1:1 con `pedido` (solo delivery).
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `pedido_id` | `UUID FK → pedido` | `UNIQUE`, `ON DELETE CASCADE` |
+| `repartidor_id` | `UUID FK → empleado NULL` | repartidor propio |
+| `proveedor_externo` | `VARCHAR(60) NULL` | "Uber", "PedidosYa" |
+| `estado` | `VARCHAR(20)` | `CHECK (estado IN ('asignado','recogido','en_camino','entregado','fallido'))` |
+| `costo` | `NUMERIC(12,4)` | `DEFAULT 0` |
+| `salida_en` | `TIMESTAMPTZ NULL` | |
+| `entregado_en` | `TIMESTAMPTZ NULL` | |
+| — | | `CHECK (repartidor_id IS NOT NULL OR proveedor_externo IS NOT NULL)` |
+
+**`transaccion_pago`** — Pago online con pasarela. 1—N (intentos). Documento inmutable.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `pedido_id` | `UUID FK → pedido` | `ON DELETE RESTRICT` |
+| `forma_pago_id` | `UUID FK → forma_pago NULL` | |
+| `pasarela` | `VARCHAR(40)` | "recurrente", "neonet", "visanet"… |
+| `gateway_transaction_id` | `VARCHAR(120) NULL` | id externo de la pasarela |
+| `estado` | `VARCHAR(20)` | `CHECK (estado IN ('pendiente','autorizado','pagado','fallido','reembolsado'))` |
+| `monto` | `NUMERIC(12,2)` | `CHECK (> 0)` |
+| `moneda` | `CHAR(3)` | `DEFAULT 'GTQ'` |
+| `payload` | `JSONB NULL` | respuesta cruda (auditoría) |
+| `procesado_en` | `TIMESTAMPTZ NULL` | |
+
+### 4.16 Secuencias
+
+**`folio_secuencia`** — Soporte de folios consecutivos race-safe.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `sucursal_id` | `UUID FK → sucursal` | |
+| `ambito` | `VARCHAR(30)` | `'factura:<serie>'` / `'orden_compra'` / `'pedido'` |
+| `ultimo` | `BIGINT` | `DEFAULT 0` |
+| — | | PK `(sucursal_id, ambito)` |
 
 ---
 
 ## 5. Relaciones clave (cardinalidad)
 
-- `sucursal` **1—N** casi todas las tablas operativas (con FKs compuestas donde hay riesgo de cruce).
-- `usuario` **N—M** `rol` **N—M** `permiso` (vía `usuario_rol` y `rol_permiso`).
-- `producto` **N—M** `grupo_modificador`; `grupo_modificador` **1—N** `opcion_modificador`.
+- `sucursal` **1—N** casi todas las tablas operativas (FKs compuestas anti-cruce).
+- `usuario` **N—M** `rol` **N—M** `permiso`.
 - `producto` **1—1** `receta` **1—N** `receta_detalle` **N—1** `insumo`.
 - `insumo` **1—1** `existencia` (caché) y **1—N** `movimiento_inventario` (ledger).
-- `cuenta` **1—N** `comanda` **1—N** `comanda_detalle`; `comanda_detalle` **1—0..1** `factura_detalle` (trazabilidad).
+- `cuenta` **1—N** `comanda` **1—N** `comanda_detalle` **1—0..1** `factura_detalle` (trazabilidad).
 - `cuenta` **1—1** `factura` **1—N** `factura_detalle` **1—N** `factura_detalle_modificador`.
-- `factura` **1—N** `pago` y **1—N** `promocion_aplicacion` (**única** fuente de promos por factura).
-- `caja` **1—N** `caja_sesion` **1—N** `factura` y **1—N** `caja_movimiento`.
-- `cliente` **1—N** `factura` y **1—N** `movimiento_lealtad` (ledger de puntos).
-- `sucursal` **1—1** `config_lealtad` y **1—N** `recompensa`.
-- `promocion` **1—N** `promocion_objetivo` / `combo_componente` / `promocion_aplicacion`.
+- `factura` **1—N** `pago`, `promocion_aplicacion`, `movimiento_inventario`, `movimiento_lealtad`.
+- `caja` **1—N** `caja_sesion` **1—N** `factura`/`caja_movimiento`.
+- `cliente` **1—N** `factura`/`movimiento_lealtad`; **1—1** `cliente_credencial`; **1—N** `cliente_direccion`.
+- `promocion` **1—N** `promocion_objetivo`/`combo_componente`/`promocion_aplicacion`.
+- **Online:** `sucursal`/`cliente` **1—N** `pedido`; `cliente_direccion` **1—N** `pedido`; `pedido` **1—N** `pedido_detalle` **1—N** `pedido_detalle_modificador`; `pedido` **1—N** `pedido_estado_historial`; `pedido` **1—1** `entrega`; `empleado` **1—N** `entrega`; `pedido` **1—N** `transaccion_pago`; `pedido` **1—0..1** `cuenta` (KDS) y **1—0..1** `factura`.
 
 ---
 
 ## 6. Diagrama Entidad-Relación (Mermaid)
-
-> Pega este bloque en [mermaid.live](https://mermaid.live). Notación *crow's foot*.
 
 ```mermaid
 erDiagram
@@ -771,6 +793,8 @@ erDiagram
     sucursal ||--o{ gasto : eroga
     sucursal ||--o{ promocion : define
     sucursal ||--o{ proveedor : contrata
+    sucursal ||--o{ pedido : atiende
+    sucursal ||--o{ folio_secuencia : numera
 
     rol ||--o{ rol_permiso : agrupa
     permiso ||--o{ rol_permiso : otorga
@@ -846,46 +870,113 @@ erDiagram
 
     categoria_gasto ||--o{ gasto : clasifica
     proveedor ||--o{ gasto : cobra
+
+    cliente ||--o| cliente_credencial : autentica
+    cliente ||--o{ cliente_direccion : guarda
+    cliente ||--o{ pedido : realiza
+    cliente_direccion ||--o{ pedido : entrega_en
+    pedido ||--o{ pedido_detalle : contiene
+    producto ||--o{ pedido_detalle : ordenado
+    pedido_detalle ||--o{ pedido_detalle_modificador : personaliza
+    opcion_modificador ||--o{ pedido_detalle_modificador : referencia
+    pedido ||--o{ pedido_estado_historial : rastrea
+    usuario ||--o{ pedido_estado_historial : actualiza
+    pedido ||--o| entrega : reparte
+    empleado ||--o{ entrega : conduce
+    pedido ||--o{ transaccion_pago : paga
+    forma_pago ||--o{ transaccion_pago : metodo
+    pedido ||--o| cuenta : genera_KDS
+    pedido ||--o| factura : factura
 ```
 
-> **Nota:** se eliminó la relación `impuesto → factura_detalle` del v1: `factura_detalle` congela `impuesto_tasa` (no lleva `impuesto_id`), así que era una relación lógica inexistente en el modelo físico.
+> **Nota:** no existe relación `impuesto → factura_detalle`; `factura_detalle` congela `impuesto_tasa` (no lleva `impuesto_id`).
 
 ---
 
-## 7. Notas de implementación (Prisma / PostgreSQL)
+## 7. Procesos (implementados como funciones en la DB)
 
-1. **Folios consecutivos:** generar con `SELECT … FOR UPDATE` sobre una tabla de secuencias por sucursal/serie, nunca `MAX(folio)+1`.
-2. **Transacción de venta (atómica):** `factura` + `factura_detalle` (+ modificadores) + `pago` + `movimiento_inventario` + `movimiento_lealtad`, **y** actualización con lock de fila (`FOR UPDATE`) de los cachés `existencia.cantidad` y `cliente.puntos`. Rollback total si algo falla.
-3. **Costeo promedio ponderado:** recalcular `insumo.costo_promedio` en cada `Entrada`, dentro de la misma transacción.
-4. **Descuento de inventario:** se dispara al pasar la comanda a cocina (explosión de receta sobre `receta_detalle`).
-5. **Fidelización — acumulación:** puntos = `FLOOR(total / config_lealtad.quetzales_por_punto)`; se inserta `movimiento_lealtad` `acumula` y se actualiza `cliente.puntos` (mismo lock).
-6. **Fidelización — canje:** con `SELECT puntos FROM cliente … FOR UPDATE`, validar `puntos >= costo_puntos`, insertar `canjea`, actualizar caché. El `CHECK (puntos >= 0)` es la última línea de defensa.
-7. **Índices sugeridos (consolidados):** `factura(sucursal_id, emitida_en)`, `movimiento_inventario(insumo_id, created_at)` + FKs de origen, `comanda(estado, estacion)`, `marcaje(empleado_id, (entrada::date))`, `caja_movimiento(caja_sesion_id)`, `movimiento_lealtad(cliente_id, created_at)`, más un índice por **cada FK** (Postgres no los crea solos).
-8. **Particionamiento por rango de fecha:** `factura`, `movimiento_inventario` y **`bitacora`** (la de mayor crecimiento). Definir política de retención/archivado de `bitacora` (p. ej. archivar particiones > 24 meses).
-9. **Triggers `updated_at`:** un trigger genérico `BEFORE UPDATE` que setea `updated_at = now()` en todas las tablas con esa columna.
-10. **Optimistic locking (opcional):** columna `version INTEGER DEFAULT 0` en documentos editables (`cuenta`, `orden_compra` en borrador) para evitar *lost updates*.
+Ver §10 para firmas. Cada proceso es una función PL/pgSQL transaccional:
+
+1. **Folios consecutivos** → `siguiente_folio()` sobre `folio_secuencia` (race-safe, sin `MAX+1`).
+2. **Venta POS completa** → `registrar_venta()`: folio + factura + detalles + modificadores + inventario (explosión de receta **al cobrar**) + pagos + puntos + cierre de cuenta, atómico.
+3. **Kardex + costeo** → `registrar_movimiento_inventario()`: actualiza `existencia` bajo lock y recalcula `insumo.costo_promedio` (promedio ponderado) en cada `Entrada`.
+4. **Explosión de receta** → `explotar_receta()`: descuenta insumos aplicando `merma_pct`.
+5. **Lealtad** → `acumular_puntos()` y `canjear_recompensa()` (valida saldo con lock).
+6. **Cancelación** → `cancelar_factura()`: nota de crédito + reverso de inventario + reverso de puntos.
+7. **Venta online (pendiente de implementar):** flujo distinto al POS — paga primero (`transaccion_pago`), confirma, descuenta inventario **al confirmar** (no al cobrar), factura después. Requiere su propia función `registrar_pedido_online()`, no reutiliza `registrar_venta()`.
+
+`updated_at` se mantiene con **trigger** genérico (`set_updated_at`) en todas las tablas con esa columna.
 
 ---
 
 ## 8. Almacenamiento de imágenes (Google Drive)
 
-Las imágenes **no** se guardan en la base de datos: se suben a Google Drive y en la DB se guarda solo el **File ID**. Aplica a `producto.imagen_drive_id`, `sucursal.logo_drive_id`, `empleado.foto_drive_id`.
-
-**Por qué el File ID y no la URL:** el ID es estable e inmutable; de él se derivan todas las URLs (vista, thumbnail, descarga, o vía Drive API `files.get?alt=media`) sin tocar la DB. Las URLs de compartir cambian de formato; el ID no.
-
-**Reglas de diseño:**
-- `*_drive_id` es `VARCHAR(100)` (los File ID rondan 33 chars; margen de sobra), `NULL` cuando no hay imagen.
-- `producto.imagen_url` es caché derivable del `drive_id`; regenerable u omitible.
-- **Permisos** ("cualquiera con enlace" o cuenta de servicio): responsabilidad de la app.
-- **Integridad:** la DB no valida la existencia en Drive (no hay FK a sistema externo). El backend valida la subida antes de guardar el ID y encola el borrado del archivo al eliminar el registro.
-- **Migración futura** (S3/GCS/Cloudinary): renombrar el campo a `imagen_storage_key`; solo cambia la función que construye la URL.
+Se guarda solo el **File ID** (`*_drive_id VARCHAR(100) NULL`) en `producto`, `sucursal`, `empleado`. El ID es estable e inmutable; de él se derivan todas las URLs (vista, thumbnail, descarga, o vía Drive API `files.get?alt=media`). La DB no valida existencia en Drive (no hay FK a sistema externo); el backend valida subida y encola borrado. Migración a S3/GCS/Cloudinary: renombrar a `imagen_storage_key`, el modelo no cambia.
 
 ---
 
-## 9. Extensiones PostgreSQL requeridas
+## 9. Extensiones y particionamiento
 
+**Extensiones:**
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;    -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS citext;      -- emails case-insensitive
 CREATE EXTENSION IF NOT EXISTS btree_gist;  -- EXCLUDE de reservaciones
 ```
+
+**Particionamiento (diferido):** `factura`, `movimiento_inventario`, `bitacora` y — a futuro — `pedido`/`transaccion_pago` son las de mayor crecimiento; se convierten a particionadas por rango de fecha vía migración cuando el volumen lo justifique (obliga a incluir la fecha en la PK y recablear FKs). Definir política de retención/archivado de `bitacora`.
+
+---
+
+## 10. Capa de lógica en la base de datos (funciones PL/pgSQL)
+
+> Contrato de invocación desde el backend. Todas retornan resultado y corren en una sola transacción.
+
+### 10.1 Primitivas reutilizables
+
+| Función | Firma (resumida) | Devuelve | Qué hace |
+|---|---|---|---|
+| `siguiente_folio` | `(sucursal_id, ambito)` | `BIGINT` | Incrementa `folio_secuencia` con lock de fila (`UPDATE … RETURNING`). Ámbitos: `factura:<serie>`, `orden_compra`, `pedido`. |
+| `registrar_movimiento_inventario` | `(insumo_id, sucursal_id, tipo, cantidad_signada, costo_unitario, motivo, usuario_id, orden_compra_id, factura_id, conteo_fisico_id)` | `UUID` | Bloquea `existencia`, valida `saldo >= 0`, en `Entrada` recalcula costo promedio ponderado, inserta kardex. |
+| `explotar_receta` | `(producto_id, cantidad, sucursal_id, factura_id, motivo, usuario_id)` | `VOID` | Recorre `receta_detalle`, aplica `merma_pct`, descuenta cada insumo. |
+| `acumular_puntos` | `(cliente_id, factura_id, total)` | `INTEGER` | `FLOOR(total / quetzales_por_punto)` si el programa está activo; inserta ledger y actualiza `cliente.puntos`/`visitas`. |
+| `canjear_recompensa` | `(cliente_id, recompensa_id, factura_id)` | `UUID` | Valida saldo con `FOR UPDATE`, descuenta puntos, registra el canje. |
+
+### 10.2 Orquestadoras
+
+**`registrar_venta(...) → JSONB`** — Venta POS.
+Firma: `(sucursal_id, caja_sesion_id, usuario_id, serie, tipo_venta, items JSONB, pagos JSONB, cuenta_id, cliente_id, descuento, promociones JSONB)`.
+Secuencia atómica: (1) folio, (2) totales con **IVA incluido** (`impuesto = total·tasa/(100+tasa)`), (3) `factura`, (4) `factura_detalle` + modificadores + **explosión de receta al cobrar** (cortesías con `motivo='Canje de lealtad'`), (5) `pago` con validación `Σpagos ≥ total`, (6) `promocion_aplicacion`, (7) `acumular_puntos` si hay cliente, (8) `cuenta.estado='cobrada'`.
+Retorna: `{factura_id, folio, serie, subtotal, impuesto_total, total, puntos_ganados}`.
+
+**`cancelar_factura(factura_id, usuario_id, motivo) → UUID`**
+Emite `nota_credito`, reingresa al inventario cada `Salida` de la factura, revierte puntos acumulados, marca `factura.estado='cancelada'`. Rechaza si ya está cancelada.
+
+**`registrar_pedido_online(...)` — pendiente.** No reutiliza `registrar_venta()` porque el flujo online invierte el orden (pago → confirma → inventario → factura). Se especifica cuando se implemente el canal.
+
+**Contratos JSONB (POS):**
+```jsonc
+items = [{
+  "producto_id":"uuid","descripcion":"...","cantidad":2,
+  "precio_unitario":45.00,"impuesto_tasa":12.00,"es_cortesia":false,
+  "comanda_detalle_id":"uuid|null",
+  "modificadores":[{"opcion_modificador_id":"uuid|null","nombre":"Extra queso","precio_extra":5.00}]
+}]
+pagos = [{"forma_pago_id":"uuid","monto":95.00,"recibido":100.00,"referencia":null}]
+promociones = [{"promocion_id":"uuid","descuento_aplicado":10.00}]  // opcional
+```
+
+### 10.3 Orden de despliegue
+
+`10_schema.sql` (tablas + constraints + índices + triggers) → `20_seed.sql` (catálogos + sucursal demo) → `30_functions.sql` (funciones + `folio_secuencia`).
+
+---
+
+## 11. Notas de diseño pendientes de decisión
+
+- **Timing de inventario online:** en POS se descuenta al cobrar; online conviene descontar **al confirmar** el pedido (`estado='confirmado'`) para no sobrevender mientras se procesa el pago.
+- **Orden del pago online:** se paga antes de preparar; el pedido no debe pasar a `en_preparacion` hasta `transaccion_pago.estado='pagado'`.
+- **Facturación diferida:** `pedido.factura_id` nullable — algunos negocios facturan al entregar.
+- **Guest checkout:** pedido de invitado crea un `cliente` mínimo (nombre + teléfono) sin `cliente_credencial`; la lealtad solo aplica a registrados.
+- **Anti-cruce online:** para blindar como el resto del modelo, aplicar FK compuesta `(producto_id, sucursal_id)` en `pedido_detalle` (requiere el `UNIQUE (id, sucursal_id)` que `producto` ya tiene).
+- **Optimistic locking (opcional):** columna `version INTEGER DEFAULT 0` en documentos editables (`cuenta`, `orden_compra` en borrador, `pedido` mientras está `recibido`).

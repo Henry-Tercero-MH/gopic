@@ -5,6 +5,7 @@
  */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { setToken } from './api';
 
 /** Perfil de permisos. `admin` ve todo; `colaborador` no ve costos/utilidad ni ajustes sensibles. */
 export type Perfil = 'admin' | 'colaborador';
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    setToken(null); // limpia también el JWT del backend
     setUser(null);
   }, []);
 

@@ -1,10 +1,34 @@
-import { Beef, Utensils, Drumstick, IceCreamCone, type LucideIcon } from 'lucide-react';
+import {
+  Beef,
+  Utensils,
+  Drumstick,
+  IceCreamCone,
+  Coffee,
+  CupSoda,
+  Pizza,
+  Sandwich,
+  Cookie,
+  Soup,
+  Salad,
+  type LucideIcon,
+} from 'lucide-react';
 
-/**
- * Icono (lucide-react) por categoría del menú. Fuente única para que la carta,
- * el POS y demás vistas muestren el mismo icono de librería en vez de emoji.
- * Indexado por `categoriaId`; con respaldo genérico para categorías nuevas.
- */
+/** Iconos (lucide) disponibles por nombre — así el backend puede guardar 'Beef', etc. */
+const porNombre: Record<string, LucideIcon> = {
+  Beef,
+  Utensils,
+  Drumstick,
+  IceCreamCone,
+  Coffee,
+  CupSoda,
+  Pizza,
+  Sandwich,
+  Cookie,
+  Soup,
+  Salad,
+};
+
+/** Mapa por id de categoría del mock (datos de demostración sin backend). */
 const iconoPorCategoria: Record<string, LucideIcon> = {
   'cat-burgers': Beef,
   'cat-fritos': Utensils,
@@ -12,6 +36,18 @@ const iconoPorCategoria: Record<string, LucideIcon> = {
   'cat-frios': IceCreamCone,
 };
 
+/** Registro dinámico: categoriaId → icono, poblado desde el backend. */
+const registro: Record<string, LucideIcon> = {};
+
+/** Registra los iconos de las categorías traídas de la API (por su campo `icono`). */
+export function registrarIconosCategoria(cats: { id: string; icono?: string | null }[]): void {
+  for (const c of cats) {
+    const comp = c.icono ? porNombre[c.icono] : undefined;
+    if (comp) registro[c.id] = comp;
+  }
+}
+
+/** Icono de una categoría: primero el registrado (backend), luego el mock, luego genérico. */
 export function iconoCategoria(categoriaId: string): LucideIcon {
-  return iconoPorCategoria[categoriaId] ?? Utensils;
+  return registro[categoriaId] ?? iconoPorCategoria[categoriaId] ?? Utensils;
 }

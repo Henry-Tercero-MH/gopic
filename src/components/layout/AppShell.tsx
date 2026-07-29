@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { RUTAS } from '@/lib/rutas';
+import { useCatalogo } from '@/lib/catalogo';
 import { useAuth } from '@/lib/auth';
 import { useOperacion } from '@/lib/operacion';
 import { aplicarTema, leerTema } from '@/lib/theme';
@@ -86,8 +87,19 @@ const COLLAPSE_KEY = 'gopic.sidebar-collapsed';
 
 export function AppShell() {
   const { user, logout } = useAuth();
-  const { cajaAbierta, fondoCaja } = useOperacion();
+  const { cajaAbierta, fondoCaja, setProductos, setCategorias } = useOperacion();
   const navigate = useNavigate();
+
+  // Carga el catálogo real (backend) y lo vuelca al store para todas las vistas.
+  const catalogo = useCatalogo();
+  useEffect(() => {
+    if (catalogo.data) {
+      setProductos(catalogo.data.productos);
+      setCategorias(catalogo.data.categorias);
+    }
+    // solo al llegar/cambiar los datos; los setters se toman por cierre.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogo.data]);
 
   // Menú según el perfil: el colaborador no ve secciones de finanzas / sistema.
   const esAdmin = user?.perfil === 'admin';

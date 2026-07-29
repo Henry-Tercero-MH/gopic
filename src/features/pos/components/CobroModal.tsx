@@ -39,8 +39,8 @@ export function CobroModal({
   onVentaCobrada,
 }: {
   total: number;
-  /** Aplica el cobro en el store y devuelve el folio real de la venta. */
-  registrarCobro: (datos: DatosCobro & { totalFinal: number }) => string;
+  /** Cobra la venta (backend) y devuelve el folio real. */
+  registrarCobro: (datos: DatosCobro & { totalFinal: number; recibido: number }) => Promise<string>;
   onCerrar: () => void;
   onCompletar: () => void;
   onVentaCobrada: (venta: Venta) => void;
@@ -52,6 +52,8 @@ export function CobroModal({
   const [clienteId, setClienteId] = useState('');
   const [recompensaId, setRecompensaId] = useState('');
   const [venta, setVenta] = useState<Venta | null>(null);
+  const [cobrando, setCobrando] = useState(false);
+  const [errorCobro, setErrorCobro] = useState('');
 
   const cliente = clientes.find((c) => c.id === clienteId);
   const recompensasCanjeables = useMemo(
@@ -73,18 +75,33 @@ export function CobroModal({
     setRecompensaId(''); // al cambiar de cliente se limpia la recompensa
   }
 
-  function confirmar() {
-    const folio = registrarCobro({ metodo, clienteId: clienteId || undefined, recompensaId: recompensaId || undefined, totalFinal });
-    const nueva: Venta = {
-      folio,
-      metodo,
-      total: totalFinal,
-      recibido: metodo === 'efectivo' ? recibidoNum : totalFinal,
-      cambio: metodo === 'efectivo' ? cambio : 0,
-      puntosGanados,
-    };
-    setVenta(nueva);
-    onVentaCobrada(nueva);
+  async function confirmar() {
+    setErrorCobro('');
+    setCobrando(true);
+    try {
+      const recibidoFinal = metodo === 'efectivo' ? recibidoNum : totalFinal;
+      const folio = await registrarCobro({
+        metodo,
+        clienteId: clienteId || undefined,
+        recompensaId: recompensaId || undefined,
+        totalFinal,
+        recibido: recibidoFinal,
+      });
+      const nueva: Venta = {
+        folio,
+        metodo,
+        total: totalFinal,
+        recibido: recibidoFinal,
+        cambio: metodo === 'efectivo' ? cambio : 0,
+        puntosGanados,
+      };
+      setVenta(nueva);
+      onVentaCobrada(nueva);
+    } catch (e) {
+      setErrorCobro(e instanceof Error ? e.message : 'No se pudo cobrar la venta.');
+    } finally {
+      setCobrando(false);
+    }
   }
 
   return (
@@ -297,7 +314,11 @@ export function CobroModal({
               </p>
             )}
 
-            <Button size="lg" className="w-full" disabled={!puedeConfirmar} onClick={confirmar}>
+            {errorCobro && (
+              <p className="rounded-md bg-danger/10 px-3 py-2 text-sm font-medium text-danger">{errorCobro}</p>
+            )}
+
+            <Button size="lg" className="w-full" disabled={!puedeConfirmar || cobrando} loading={cobrando} onClick={confirmar}>
               <CheckCircle2 size={20} /> Confirmar pago · {formatCurrency(totalFinal)}
             </Button>
           </div>

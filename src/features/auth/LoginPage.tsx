@@ -2,21 +2,20 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, LogIn, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { useAuth, type SessionUser } from '@/lib/auth';
+import { useAuth } from '@/lib/auth';
+import { loginApi } from '@/lib/api';
 import { RUTAS } from '@/lib/rutas';
 import { aplicarTema, leerTema } from '@/lib/theme';
 
-/**
- * Cuentas de la demo, indexadas por contraseña. Hardcodeadas a propósito para
- * bloquear el inicio y probar los roles.
- * OJO: esto NO es seguridad real — los valores viajan al navegador y cualquiera
- * puede verlos en el bundle. Sirve solo para una demo/kiosko. Para producción,
- * validar contra el backend y nunca guardar contraseñas en el cliente.
- */
-const CUENTAS: Record<string, SessionUser> = {
-  admin123: { nombre: 'Ana Rodríguez', rol: 'Administradora', iniciales: 'AR', perfil: 'admin' },
-  colab123: { nombre: 'Luis Gómez', rol: 'Colaborador · Caja', iniciales: 'LG', perfil: 'colaborador' },
-};
+/** Iniciales a partir del nombre, para el avatar. */
+function iniciales(nombre: string): string {
+  return nombre
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 /** Saludo según la hora, para darle calidez al inicio de sesión. */
 function saludo(): string {
@@ -46,7 +45,7 @@ export function LoginPage() {
   // Si ya hay sesión activa, no mostramos el login.
   if (user) return <Navigate to={destino} replace />;
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
 
@@ -56,17 +55,15 @@ export function LoginPage() {
     }
 
     setCargando(true);
-    // Simulamos la llamada al backend y validamos la contraseña de acceso.
-    setTimeout(() => {
-      const cuenta = CUENTAS[clave];
-      if (!cuenta) {
-        setError('Contraseña incorrecta.');
-        setCargando(false);
-        return;
-      }
-      login(cuenta);
+    try {
+      const u = await loginApi(usuario.trim(), clave);
+      const perfil = u.roles.includes('Administrador') ? 'admin' : 'colaborador';
+      login({ nombre: u.nombre, rol: u.roles.join(' · ') || 'Colaborador', iniciales: iniciales(u.nombre), perfil });
       navigate(destino, { replace: true });
-    }, 600);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión.');
+      setCargando(false);
+    }
   }
 
   return (
@@ -164,8 +161,8 @@ export function LoginPage() {
           </p>
 
           <div className="mt-6 rounded-md border border-dashed border-border bg-surface-alt px-3 py-2 text-center text-xs text-text-muted">
-            Demo · <span className="num font-medium text-text">admin123</span> (admin) ·{' '}
-            <span className="num font-medium text-text">colab123</span> (colaborador)
+            Demo · <span className="num font-medium text-text">ana@gopic.gt</span> / admin123 ·{' '}
+            <span className="num font-medium text-text">luis@gopic.gt</span> / colab123
           </div>
 
           <p className="mt-6 text-center text-xs text-text-muted">GOPIC · Preparaciones con sabor</p>
