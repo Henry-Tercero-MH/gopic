@@ -22,9 +22,11 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
-import { empleadosSeed, type Empleado, type EstadoMarcaje, type Puesto } from '@/mock/data';
+import { useEmpleados, useEmpleadoMutations } from '@/lib/personal';
+import { type EmpleadoApi, type EmpleadoInput } from '@/lib/api';
 
-const PUESTOS: Puesto[] = ['Cajero', 'Mesero', 'Barista', 'Cocina', 'Almacenista', 'Administrador'];
+type EstadoMarcaje = EmpleadoApi['estado'];
+const PUESTOS = ['Cajero', 'Mesero', 'Barista', 'Cocina', 'Almacenista', 'Administrador'];
 
 const estadoMarcaje: Record<EstadoMarcaje, { label: string; tone: 'success' | 'neutral' | 'info' }> = {
   trabajando: { label: 'En turno', tone: 'success' },
@@ -35,8 +37,6 @@ const estadoMarcaje: Record<EstadoMarcaje, { label: string; tone: 'success' | 'n
 const iniciales = (n: string) =>
   n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 
-const horaActual = () =>
-  new Date().toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
 
 /** Convierte "HH:MM" a minutos desde medianoche; null si no hay hora. */
 function minutosDeHora(hhmm: string | null): number | null {
@@ -46,7 +46,7 @@ function minutosDeHora(hhmm: string | null): number | null {
 }
 
 /** Minutos trabajados hoy: si sigue en turno cuenta hasta `ahora`; si salió, hasta su salida. */
-function minutosTrabajados(e: Empleado, ahoraMin: number): number {
+function minutosTrabajados(e: EmpleadoApi, ahoraMin: number): number {
   const entrada = minutosDeHora(e.entrada);
   if (entrada == null) return 0;
   const fin = e.estado === 'trabajando' ? ahoraMin : minutosDeHora(e.salida) ?? entrada;
@@ -59,10 +59,12 @@ function formatHoras(min: number): string {
 }
 
 export function PersonalPage() {
-  const [empleados, setEmpleados] = useState<Empleado[]>(empleadosSeed);
+  const { data: empleados = [] } = useEmpleados();
+  const { crear, editar: editarMut, eliminar: eliminarMut, entrada: entradaMut, salida: salidaMut } =
+    useEmpleadoMutations();
   const [busqueda, setBusqueda] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [editando, setEditando] = useState<Empleado | null>(null);
+  const [editando, setEditando] = useState<EmpleadoApi | null>(null);
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -88,29 +90,41 @@ export function PersonalPage() {
   const horasHoyTotal = empleados.reduce((s, e) => s + minutosTrabajados(e, ahoraMin), 0);
 
   /** Marca la entrada del empleado (registra la hora y lo pone "en turno"). */
-  function marcarEntrada(e: Empleado) {
-    setEmpleados((prev) =>
-      prev.map((x) => (x.id === e.id ? { ...x, estado: 'trabajando', entrada: horaActual(), salida: null } : x)),
-    );
-    toast.exito(`${e.nombre} marcó entrada.`);
+  async function marcarEntrada(e: EmpleadoApi) {
+    try {
+      await entradaMut.mutateAsync(e.id);
+      toast.exito(`${e.nombre} marcó entrada.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo marcar entrada.');
+    }
   }
 
   /** Marca la salida del empleado (registra la hora y lo pone "salió"). */
-  function marcarSalida(e: Empleado) {
-    setEmpleados((prev) =>
-      prev.map((x) => (x.id === e.id ? { ...x, estado: 'salio', salida: horaActual() } : x)),
-    );
-    toast.info(`${e.nombre} marcó salida.`);
+  async function marcarSalida(e: EmpleadoApi) {
+    try {
+      await salidaMut.mutateAsync(e.id);
+      toast.info(`${e.nombre} marcó salida.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo marcar salida.');
+    }
   }
 
-  function guardar(emp: Empleado) {
-    const esNuevo = !empleados.some((x) => x.id === emp.id);
-    setEmpleados((prev) => (esNuevo ? [...prev, emp] : prev.map((x) => (x.id === emp.id ? emp : x))));
-    setModalAbierto(false);
-    toast.exito(esNuevo ? `${emp.nombre} agregado al personal.` : `${emp.nombre} actualizado.`);
+  async function guardar(input: EmpleadoInput) {
+    try {
+      if (editando) {
+        await editarMut.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`${input.nombre} actualizado.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`${input.nombre} agregado al personal.`);
+      }
+      setModalAbierto(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo guardar.');
+    }
   }
 
-  async function eliminar(e: Empleado) {
+  async function eliminar(e: EmpleadoApi) {
     const ok = await confirm({
       titulo: 'Eliminar empleado',
       mensaje: `¿Eliminar a "${e.nombre}" del personal? Esta acción no se puede deshacer.`,
@@ -118,8 +132,12 @@ export function PersonalPage() {
       peligro: true,
     });
     if (!ok) return;
-    setEmpleados((prev) => prev.filter((x) => x.id !== e.id));
-    toast.info(`${e.nombre} eliminado.`);
+    try {
+      await eliminarMut.mutateAsync(e.id);
+      toast.info(`${e.nombre} eliminado.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo eliminar.');
+    }
   }
 
   return (
@@ -276,14 +294,14 @@ function EmpleadoModal({
   onCerrar,
   onGuardar,
 }: {
-  empleado: Empleado | null;
+  empleado: EmpleadoApi | null;
   onCerrar: () => void;
-  onGuardar: (e: Empleado) => void;
+  onGuardar: (input: EmpleadoInput) => void;
 }) {
   const [nombre, setNombre] = useState(empleado?.nombre ?? '');
-  const [puesto, setPuesto] = useState<Puesto>(empleado?.puesto ?? 'Mesero');
+  const [puesto, setPuesto] = useState(empleado?.puesto ?? 'Mesero');
   const [telefono, setTelefono] = useState(empleado?.telefono ?? '');
-  const [turno, setTurno] = useState(empleado?.turno ?? 'Mañana · 07:00–15:00');
+  const [turno, setTurno] = useState(empleado?.turno || 'Mañana · 07:00–15:00');
 
   const valido = nombre.trim() !== '';
 
@@ -291,17 +309,11 @@ function EmpleadoModal({
     'mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none';
 
   function guardar() {
-    const nombreLimpio = nombre.trim();
     onGuardar({
-      id: empleado?.id ?? `e-${Date.now()}`,
-      nombre: nombreLimpio,
+      nombre: nombre.trim(),
       puesto,
-      telefono: telefono.trim(),
-      turno: turno.trim(),
-      iniciales: iniciales(nombreLimpio),
-      estado: empleado?.estado ?? 'sin_marcar',
-      entrada: empleado?.entrada ?? null,
-      salida: empleado?.salida ?? null,
+      telefono: telefono.trim() || undefined,
+      turno: turno.trim() || undefined,
     });
   }
 
@@ -327,7 +339,7 @@ function EmpleadoModal({
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm font-medium text-text">Puesto</span>
-            <select value={puesto} onChange={(e) => setPuesto(e.target.value as Puesto)} className={inputCls}>
+            <select value={puesto} onChange={(e) => setPuesto(e.target.value)} className={inputCls}>
               {PUESTOS.map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}

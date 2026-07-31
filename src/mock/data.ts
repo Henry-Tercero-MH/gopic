@@ -8,6 +8,8 @@ export interface Categoria {
   id: string;
   nombre: string;
   emoji: string;
+  /** Nombre del icono lucide (p. ej. 'Beef'); lo persiste el backend en `icono`. */
+  icono?: string;
 }
 
 export interface Producto {
@@ -16,6 +18,8 @@ export interface Producto {
   nombre: string;
   precio: number;
   emoji: string;
+  /** Estación que prepara el producto; enruta la comanda al KDS correcto. */
+  estacion?: 'Barra' | 'Cocina';
   /** Foto del producto. Placeholder de Unsplash mientras no haya fotos reales. */
   imagen?: string;
   destacado?: boolean;

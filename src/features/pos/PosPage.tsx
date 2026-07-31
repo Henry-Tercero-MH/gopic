@@ -31,6 +31,7 @@ import { ModificadoresModal } from './components/ModificadoresModal';
 import { PromoSelectorModal } from './components/PromoSelectorModal';
 import { usePosTicket } from './hooks/usePosTicket';
 import { cobrarVenta } from '@/lib/ventasApi';
+import { crearComanda } from '@/lib/api';
 import { formatCurrency } from '@/lib/format';
 import { iconoCategoria } from '@/lib/iconosCategoria';
 import { useToast } from '@/lib/toast';
@@ -496,7 +497,7 @@ export function PosPage() {
       {cobroAbierto && (
         <CobroModal
           total={mesa ? totalEnviado + total : total}
-          registrarCobro={async ({ metodo, totalFinal, recibido }) => {
+          registrarCobro={async ({ metodo, totalFinal, recibido, clienteId, recompensaId }) => {
             // Venta real contra el backend: registra la factura y descuenta inventario.
             const items = lineas.map((l) => ({
               producto_id: l.producto.id,
@@ -509,8 +510,16 @@ export function PosPage() {
               throw new Error('El flujo de mesa (cuenta acumulada) aún no está conectado al backend.');
             }
             const descuento = Math.max(0, subtotal - totalFinal);
-            const res = await cobrarVenta({ tipoVenta, items, metodo, recibido, descuento });
-            return String(res.folio);
+            const res = await cobrarVenta({ tipoVenta, items, metodo, recibido, descuento, clienteId, recompensaId });
+
+            // Envía a cocina (KDS). Best-effort: no bloquea el cobro si falla.
+            crearComanda({
+              tipoVenta,
+              mesaId: mesa?.id,
+              items: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad, nota: l.nota })),
+            }).catch(() => {});
+
+            return { folio: String(res.folio), puntosGanados: res.puntos_ganados };
           }}
           onVentaCobrada={(v) =>
             toast.exito(`Venta ${v.folio} cobrada · ${formatCurrency(v.total)}`)

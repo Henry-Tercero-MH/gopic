@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { UserPlus, Pencil, Trash2, X, Check, Search, Star, History } from 'lucide-react';
+import { UserPlus, Pencil, Trash2, X, Check, Search, Star, History, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -8,7 +8,8 @@ import { Drawer } from '@/components/ui/Drawer';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
-import { useOperacion, type Cliente, type MovimientoLealtad } from '@/lib/operacion';
+import { useClientes, useClienteMutations, useMovimientosLealtad } from '@/lib/clientes';
+import { type ClienteApi, type ClienteInput } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
 const inputCls =
@@ -17,28 +18,40 @@ const inputCls =
 const iniciales = (n: string) =>
   n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 
+const fechaCorta = (iso: string) =>
+  new Date(iso).toLocaleString('es-GT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
 export function ClientesPage() {
-  const { clientes, setClientes, lealtad } = useOperacion();
+  const { data: clientes = [], isLoading, isError } = useClientes();
+  const { crear, editar, eliminar: mutEliminar } = useClienteMutations();
   const [busqueda, setBusqueda] = useState('');
-  const [editando, setEditando] = useState<Cliente | null>(null);
+  const [editando, setEditando] = useState<ClienteApi | null>(null);
   const [abierto, setAbierto] = useState(false);
-  const [historialDe, setHistorialDe] = useState<Cliente | null>(null);
+  const [historialDe, setHistorialDe] = useState<ClienteApi | null>(null);
   const toast = useToast();
   const confirm = useConfirm();
 
   const q = busqueda.trim().toLowerCase();
   const visibles = clientes.filter(
-    (c) => !q || c.nombre.toLowerCase().includes(q) || c.nit.toLowerCase().includes(q),
+    (c) => !q || c.nombre.toLowerCase().includes(q) || (c.nit ?? '').toLowerCase().includes(q),
   );
 
-  function guardar(c: Cliente) {
-    const esNuevo = !clientes.some((x) => x.id === c.id);
-    setClientes(esNuevo ? [...clientes, c] : clientes.map((x) => (x.id === c.id ? c : x)));
-    setAbierto(false);
-    toast.exito(esNuevo ? `Cliente "${c.nombre}" agregado.` : `Cliente "${c.nombre}" actualizado.`);
+  async function guardar(data: ClienteInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data });
+        toast.exito(`Cliente "${data.nombre}" actualizado.`);
+      } else {
+        await crear.mutateAsync(data);
+        toast.exito(`Cliente "${data.nombre}" agregado.`);
+      }
+      setAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el cliente.');
+    }
   }
 
-  async function eliminar(c: Cliente) {
+  async function eliminar(c: ClienteApi) {
     const ok = await confirm({
       titulo: 'Eliminar cliente',
       mensaje: `¿Eliminar a "${c.nombre}"? Esta acción no se puede deshacer.`,
@@ -46,8 +59,12 @@ export function ClientesPage() {
       peligro: true,
     });
     if (!ok) return;
-    setClientes(clientes.filter((x) => x.id !== c.id));
-    toast.info(`Cliente "${c.nombre}" eliminado.`);
+    try {
+      await mutEliminar.mutateAsync(c.id);
+      toast.info(`Cliente "${c.nombre}" eliminado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.');
+    }
   }
 
   return (
@@ -75,7 +92,13 @@ export function ClientesPage() {
           </div>
         </div>
 
-        {visibles.length === 0 ? (
+        {isLoading ? (
+          <div className="grid place-items-center p-10 text-text-muted">
+            <Loader2 size={24} className="animate-spin motion-reduce:animate-none" aria-label="Cargando" />
+          </div>
+        ) : isError ? (
+          <p className="p-8 text-center text-sm text-danger">No se pudo cargar la lista de clientes.</p>
+        ) : visibles.length === 0 ? (
           <p className="p-8 text-center text-sm text-text-muted">Sin resultados.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -107,11 +130,7 @@ export function ClientesPage() {
                       {c.email && <div className="text-xs">{c.email}</div>}
                     </td>
                     <td className="px-4 py-3">
-                      {c.visitas > 0 ? (
-                        <span className="num text-text-muted">{c.visitas}</span>
-                      ) : (
-                        <span className="text-text-muted">—</span>
-                      )}
+                      {c.visitas > 0 ? <span className="num text-text-muted">{c.visitas}</span> : <span className="text-text-muted">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       {c.puntos > 0 ? (
@@ -153,18 +172,31 @@ export function ClientesPage() {
         )}
       </Card>
 
-      {abierto && <ClienteModal cliente={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
+      {abierto && (
+        <ClienteModal
+          cliente={editando}
+          guardando={crear.isPending || editar.isPending}
+          onCerrar={() => setAbierto(false)}
+          onGuardar={guardar}
+        />
+      )}
 
-      <HistorialLealtadDrawer
-        cliente={historialDe}
-        movimientos={historialDe ? lealtad.filter((m) => m.clienteId === historialDe.id) : []}
-        onClose={() => setHistorialDe(null)}
-      />
+      <HistorialLealtadDrawer cliente={historialDe} onClose={() => setHistorialDe(null)} />
     </div>
   );
 }
 
-function ClienteModal({ cliente, onCerrar, onGuardar }: { cliente: Cliente | null; onCerrar: () => void; onGuardar: (c: Cliente) => void }) {
+function ClienteModal({
+  cliente,
+  guardando,
+  onCerrar,
+  onGuardar,
+}: {
+  cliente: ClienteApi | null;
+  guardando: boolean;
+  onCerrar: () => void;
+  onGuardar: (data: ClienteInput) => void;
+}) {
   const [nombre, setNombre] = useState(cliente?.nombre ?? '');
   const [nit, setNit] = useState(cliente?.nit ?? '');
   const [telefono, setTelefono] = useState(cliente?.telefono ?? '');
@@ -198,8 +230,16 @@ function ClienteModal({ cliente, onCerrar, onGuardar }: { cliente: Cliente | nul
       <footer className="flex justify-end gap-2 border-t border-border p-4">
         <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
         <Button
-          disabled={!valido}
-          onClick={() => onGuardar({ id: cliente?.id ?? `c-${Date.now()}`, nombre: nombre.trim(), nit: nit.trim(), telefono: telefono.trim(), email: email.trim(), visitas: cliente?.visitas ?? 0, puntos: cliente?.puntos ?? 0 })}
+          disabled={!valido || guardando}
+          loading={guardando}
+          onClick={() =>
+            onGuardar({
+              nombre: nombre.trim(),
+              nit: nit.trim() || undefined,
+              telefono: telefono.trim() || undefined,
+              email: email.trim() || undefined,
+            })
+          }
         >
           <Check size={18} /> Guardar
         </Button>
@@ -217,15 +257,9 @@ function Campo({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function HistorialLealtadDrawer({
-  cliente,
-  movimientos,
-  onClose,
-}: {
-  cliente: Cliente | null;
-  movimientos: MovimientoLealtad[];
-  onClose: () => void;
-}) {
+function HistorialLealtadDrawer({ cliente, onClose }: { cliente: ClienteApi | null; onClose: () => void }) {
+  const { data: movimientos = [], isLoading } = useMovimientosLealtad(cliente?.id ?? null);
+
   return (
     <Drawer open={cliente !== null} onClose={onClose} ariaLabel="Historial de puntos">
       {cliente && (
@@ -237,11 +271,7 @@ function HistorialLealtadDrawer({
                 <Star size={14} /> {cliente.puntos} puntos disponibles
               </p>
             </div>
-            <button
-              onClick={onClose}
-              aria-label="Cerrar"
-              className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk"
-            >
+            <button onClick={onClose} aria-label="Cerrar" className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk">
               <X size={18} />
             </button>
           </header>
@@ -250,7 +280,11 @@ function HistorialLealtadDrawer({
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
               <History size={14} /> Movimientos de puntos
             </div>
-            {movimientos.length === 0 ? (
+            {isLoading ? (
+              <div className="grid place-items-center py-10 text-text-muted">
+                <Loader2 size={22} className="animate-spin motion-reduce:animate-none" aria-label="Cargando" />
+              </div>
+            ) : movimientos.length === 0 ? (
               <div className="grid place-items-center py-10 text-center">
                 <div>
                   <Star size={32} className="mx-auto text-text-muted" />
@@ -264,7 +298,7 @@ function HistorialLealtadDrawer({
                   <li key={m.id} className="flex items-center justify-between rounded-md bg-surface-alt px-3 py-2">
                     <div>
                       <div className="text-sm font-medium text-text">{m.descripcion}</div>
-                      <div className="num text-xs text-text-muted">{m.fecha}</div>
+                      <div className="num text-xs text-text-muted">{fechaCorta(m.createdAt)}</div>
                     </div>
                     <span className={cn('num text-sm font-semibold', m.puntos >= 0 ? 'text-success' : 'text-danger')}>
                       {m.puntos >= 0 ? '+' : ''}{m.puntos} pts

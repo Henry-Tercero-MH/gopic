@@ -8,22 +8,25 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
 import { useOperacion } from '@/lib/operacion';
+import { useCatalogoMutations } from '@/lib/catalogo';
+import { useProveedores, useProveedorMutations } from '@/lib/proveedores';
+import { useInsumos, useInsumoMutations } from '@/lib/inventario';
+import { ICONOS_DISPONIBLES, componenteIcono } from '@/lib/iconosCategoria';
+import {
+  type ProductoInput,
+  type CategoriaInput,
+  type ProveedorApi,
+  type ProveedorInput,
+  type InsumoApi,
+  type InsumoInput,
+} from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
 import {
   type Producto,
   type Categoria,
-  type Insumo,
   type NivelStock,
 } from '@/mock/data';
-
-interface Proveedor {
-  id: string;
-  nombre: string;
-  contacto: string;
-  telefono: string;
-  email: string;
-}
 
 type TipoMedida = 'Peso' | 'Volumen' | 'Unidad';
 
@@ -46,20 +49,7 @@ const MEDIDAS_SEED: Medida[] = [
 
 const TIPOS_MEDIDA: TipoMedida[] = ['Peso', 'Volumen', 'Unidad'];
 
-const PROVEEDORES_SEED: Proveedor[] = [
-  { id: 'prov-1', nombre: 'Distribuidora La Granja', contacto: 'Elena Ruiz', telefono: '+502 5555 0011', email: 'ventas@lagranja.gt' },
-  { id: 'prov-2', nombre: 'Carnes del Valle', contacto: 'Mario Solís', telefono: '+502 5555 0022', email: 'pedidos@carnesdelvalle.gt' },
-  { id: 'prov-3', nombre: 'Empaques y Desechables SA', contacto: 'Rita Gómez', telefono: '+502 5555 0033', email: 'contacto@empaques.gt' },
-];
-
 const uid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-/** Calcula el nivel de stock a partir de existencia vs mínimo. */
-function calcularNivel(existencia: number, minimo: number): NivelStock {
-  if (existencia <= minimo * 0.4) return 'critico';
-  if (existencia < minimo) return 'bajo';
-  return 'ok';
-}
 
 /* ------------------------------------------------------------------ */
 /*  Página                                                            */
@@ -77,19 +67,11 @@ const PESTANAS: { id: Pestana; label: string; icon: LucideIcon }[] = [
 
 export function CatalogosPage() {
   const [pestana, setPestana] = useState<Pestana>('productos');
-  // Productos, categorías e insumos viven en el store: se comparten con POS e Inventario.
-  const op = useOperacion();
-  const { productos, categorias, insumos } = op;
-  // Adaptadores para soportar la forma funcional setX(prev => next) sobre el store.
-  const setProductos: React.Dispatch<React.SetStateAction<Producto[]>> = (v) =>
-    op.setProductos(typeof v === 'function' ? (v as (p: Producto[]) => Producto[])(productos) : v);
-  const setCategorias: React.Dispatch<React.SetStateAction<Categoria[]>> = (v) =>
-    op.setCategorias(typeof v === 'function' ? (v as (c: Categoria[]) => Categoria[])(categorias) : v);
-  const setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>> = (v) =>
-    op.setInsumos(typeof v === 'function' ? (v as (i: Insumo[]) => Insumo[])(insumos) : v);
-  // Medidas y proveedores solo se usan aquí, quedan como estado local.
+  // Productos y categorías viven en el backend (el store los refleja para POS); insumos
+  // y proveedores también vienen del backend vía React Query. Medidas siguen locales.
+  const { productos, categorias } = useOperacion();
+  const { data: insumos = [] } = useInsumos();
   const [medidas, setMedidas] = useState<Medida[]>(() => MEDIDAS_SEED.map((m) => ({ ...m })));
-  const [proveedores, setProveedores] = useState<Proveedor[]>(() => PROVEEDORES_SEED.map((p) => ({ ...p })));
 
   return (
     <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -112,15 +94,11 @@ export function CatalogosPage() {
         ))}
       </div>
 
-      {pestana === 'productos' && (
-        <ProductosCat productos={productos} setProductos={setProductos} categorias={categorias} />
-      )}
-      {pestana === 'categorias' && (
-        <CategoriasCat categorias={categorias} setCategorias={setCategorias} productos={productos} />
-      )}
+      {pestana === 'productos' && <ProductosCat productos={productos} categorias={categorias} />}
+      {pestana === 'categorias' && <CategoriasCat categorias={categorias} productos={productos} />}
       {pestana === 'medidas' && <MedidasCat medidas={medidas} setMedidas={setMedidas} insumos={insumos} />}
-      {pestana === 'insumos' && <InsumosCat insumos={insumos} setInsumos={setInsumos} medidas={medidas} />}
-      {pestana === 'proveedores' && <ProveedoresCat proveedores={proveedores} setProveedores={setProveedores} />}
+      {pestana === 'insumos' && <InsumosCat insumos={insumos} medidas={medidas} />}
+      {pestana === 'proveedores' && <ProveedoresCat />}
     </div>
   );
 }
@@ -131,15 +109,15 @@ export function CatalogosPage() {
 
 function ProductosCat({
   productos,
-  setProductos,
   categorias,
 }: {
   productos: Producto[];
-  setProductos: React.Dispatch<React.SetStateAction<Producto[]>>;
   categorias: Categoria[];
 }) {
   const [editando, setEditando] = useState<Producto | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const toast = useToast();
+  const { crearProducto, editarProducto, eliminarProducto } = useCatalogoMutations();
   const nombreCat = (id: string) => categorias.find((c) => c.id === id)?.nombre ?? '—';
 
   function abrirNuevo() {
@@ -150,9 +128,19 @@ function ProductosCat({
     setEditando(p);
     setAbierto(true);
   }
-  function guardar(p: Producto) {
-    setProductos((prev) => (prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p]));
-    setAbierto(false);
+  async function guardar(input: ProductoInput) {
+    try {
+      if (editando) {
+        await editarProducto.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Producto "${input.nombre}" actualizado.`);
+      } else {
+        await crearProducto.mutateAsync(input);
+        toast.exito(`Producto "${input.nombre}" creado.`);
+      }
+      setAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el producto.');
+    }
   }
 
   return (
@@ -171,6 +159,7 @@ function ProductosCat({
             ),
           },
           { header: 'Categoría', render: (p: Producto) => <span className="text-text-muted">{nombreCat(p.categoriaId)}</span> },
+          { header: 'Estación', render: (p: Producto) => <span className="text-text-muted">{p.estacion ?? '—'}</span> },
           { header: 'Precio', render: (p: Producto) => <span className="num font-semibold text-text">{formatCurrency(p.precio)}</span> },
           { header: 'Popular', render: (p: Producto) => (p.destacado ? <Badge tone="accent">Popular</Badge> : <span className="text-text-muted">—</span>) },
         ]}
@@ -178,7 +167,7 @@ function ProductosCat({
         entidad="producto"
         describir={(p) => p.nombre}
         onEditar={abrirEditar}
-        onEliminar={(p) => setProductos((prev) => prev.filter((x) => x.id !== p.id))}
+        onEliminar={async (p) => { await eliminarProducto.mutateAsync(p.id); }}
       />
 
       {abierto && (
@@ -197,12 +186,12 @@ function ProductoModal({
   producto: Producto | null;
   categorias: Categoria[];
   onCerrar: () => void;
-  onGuardar: (p: Producto) => void;
+  onGuardar: (input: ProductoInput) => void;
 }) {
   const [nombre, setNombre] = useState(producto?.nombre ?? '');
   const [categoriaId, setCategoriaId] = useState(producto?.categoriaId ?? categorias[0]?.id ?? '');
   const [precio, setPrecio] = useState(String(producto?.precio ?? ''));
-  const [emoji, setEmoji] = useState(producto?.emoji ?? '🍽️');
+  const [estacion, setEstacion] = useState<'Barra' | 'Cocina'>(producto?.estacion ?? 'Cocina');
   const [imagen, setImagen] = useState(producto?.imagen ?? '');
   const [destacado, setDestacado] = useState(producto?.destacado ?? false);
   const valido = nombre.trim() !== '' && parseFloat(precio) > 0 && categoriaId !== '';
@@ -217,7 +206,7 @@ function ProductoModal({
           <Campo label="Categoría">
             <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={inputCls}>
               {categorias.map((c) => (
-                <option key={c.id} value={c.id}>{c.emoji} {c.nombre}</option>
+                <option key={c.id} value={c.id}>{c.nombre}</option>
               ))}
             </select>
           </Campo>
@@ -226,8 +215,11 @@ function ProductoModal({
           </Campo>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Campo label="Emoji (respaldo)">
-            <input value={emoji} onChange={(e) => setEmoji(e.target.value)} className={inputCls} />
+          <Campo label="Estación (KDS)">
+            <select value={estacion} onChange={(e) => setEstacion(e.target.value as 'Barra' | 'Cocina')} className={inputCls}>
+              <option value="Cocina">Cocina</option>
+              <option value="Barra">Barra</option>
+            </select>
           </Campo>
           <Campo label="URL de imagen">
             <input value={imagen} onChange={(e) => setImagen(e.target.value)} placeholder="https://…" className={inputCls} />
@@ -243,12 +235,11 @@ function ProductoModal({
         valido={valido}
         onGuardar={() =>
           onGuardar({
-            id: producto?.id ?? uid('p'),
             nombre: nombre.trim(),
             categoriaId,
             precio: parseFloat(precio),
-            emoji: emoji || '🍽️',
-            imagen: imagen.trim() || undefined,
+            estacion,
+            imagenUrl: imagen.trim() || undefined,
             destacado,
           })
         }
@@ -263,34 +254,55 @@ function ProductoModal({
 
 function CategoriasCat({
   categorias,
-  setCategorias,
   productos,
 }: {
   categorias: Categoria[];
-  setCategorias: React.Dispatch<React.SetStateAction<Categoria[]>>;
   productos: Producto[];
 }) {
   const [editando, setEditando] = useState<Categoria | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const toast = useToast();
+  const { crearCategoria, editarCategoria, eliminarCategoria } = useCatalogoMutations();
   const cuenta = (id: string) => productos.filter((p) => p.categoriaId === id).length;
 
-  function guardar(c: Categoria) {
-    setCategorias((prev) => (prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c]));
-    setAbierto(false);
+  async function guardar(input: CategoriaInput) {
+    try {
+      if (editando) {
+        await editarCategoria.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Categoría "${input.nombre}" actualizada.`);
+      } else {
+        await crearCategoria.mutateAsync(input);
+        toast.exito(`Categoría "${input.nombre}" creada.`);
+      }
+      setAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar la categoría.');
+    }
   }
 
   return (
     <CatalogoLayout titulo="Categorías" total={categorias.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
       <Tabla
         columnas={[
-          { header: 'Categoría', render: (c: Categoria) => <span className="font-medium text-text"><span className="mr-2 text-lg">{c.emoji}</span>{c.nombre}</span> },
+          {
+            header: 'Categoría',
+            render: (c: Categoria) => {
+              const Icono = componenteIcono(c.icono);
+              return (
+                <span className="flex items-center gap-2 font-medium text-text">
+                  <Icono size={18} className="text-text-muted" />
+                  {c.nombre}
+                </span>
+              );
+            },
+          },
           { header: 'Productos', render: (c: Categoria) => <span className="num text-text-muted">{cuenta(c.id)}</span> },
         ]}
         filas={categorias}
         entidad="categoría"
         describir={(c) => c.nombre}
         onEditar={(c) => { setEditando(c); setAbierto(true); }}
-        onEliminar={(c) => setCategorias((prev) => prev.filter((x) => x.id !== c.id))}
+        onEliminar={async (c) => { await eliminarCategoria.mutateAsync(c.id); }}
       />
 
       {abierto && <CategoriaModal categoria={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
@@ -305,11 +317,12 @@ function CategoriaModal({
 }: {
   categoria: Categoria | null;
   onCerrar: () => void;
-  onGuardar: (c: Categoria) => void;
+  onGuardar: (input: CategoriaInput) => void;
 }) {
   const [nombre, setNombre] = useState(categoria?.nombre ?? '');
-  const [emoji, setEmoji] = useState(categoria?.emoji ?? '🍴');
+  const [icono, setIcono] = useState(categoria?.icono ?? ICONOS_DISPONIBLES[0]);
   const valido = nombre.trim() !== '';
+  const IconoPrevia = componenteIcono(icono);
 
   return (
     <ModalShell titulo={categoria ? 'Editar categoría' : 'Nueva categoría'} onCerrar={onCerrar}>
@@ -317,14 +330,23 @@ function CategoriaModal({
         <Campo label="Nombre">
           <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
         </Campo>
-        <Campo label="Emoji">
-          <input value={emoji} onChange={(e) => setEmoji(e.target.value)} className={cn(inputCls, 'w-24 text-center text-lg')} />
+        <Campo label="Icono">
+          <div className="mt-1 flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-border bg-surface-alt">
+              <IconoPrevia size={20} className="text-text" />
+            </span>
+            <select value={icono} onChange={(e) => setIcono(e.target.value)} className={cn(inputCls, 'mt-0')}>
+              {ICONOS_DISPONIBLES.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
         </Campo>
       </div>
       <PieModal
         onCerrar={onCerrar}
         valido={valido}
-        onGuardar={() => onGuardar({ id: categoria?.id ?? uid('cat'), nombre: nombre.trim(), emoji: emoji || '🍴' })}
+        onGuardar={() => onGuardar({ nombre: nombre.trim(), icono })}
       />
     </ModalShell>
   );
@@ -347,7 +369,7 @@ function MedidasCat({
 }: {
   medidas: Medida[];
   setMedidas: React.Dispatch<React.SetStateAction<Medida[]>>;
-  insumos: Insumo[];
+  insumos: InsumoApi[];
 }) {
   const [editando, setEditando] = useState<Medida | null>(null);
   const [abierto, setAbierto] = useState(false);
@@ -433,37 +455,47 @@ const nivelBadge: Record<NivelStock, { tone: 'success' | 'warning' | 'danger'; l
 
 function InsumosCat({
   insumos,
-  setInsumos,
   medidas,
 }: {
-  insumos: Insumo[];
-  setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>>;
+  insumos: InsumoApi[];
   medidas: Medida[];
 }) {
-  const [editando, setEditando] = useState<Insumo | null>(null);
+  const [editando, setEditando] = useState<InsumoApi | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const toast = useToast();
+  const { crear, editar, eliminar } = useInsumoMutations();
 
-  function guardar(i: Insumo) {
-    setInsumos((prev) => (prev.some((x) => x.id === i.id) ? prev.map((x) => (x.id === i.id ? i : x)) : [...prev, i]));
-    setAbierto(false);
+  async function guardar(input: InsumoInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Insumo "${input.nombre}" actualizado.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Insumo "${input.nombre}" creado.`);
+      }
+      setAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el insumo.');
+    }
   }
 
   return (
     <CatalogoLayout titulo="Insumos" total={insumos.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
       <Tabla
         columnas={[
-          { header: 'Insumo', render: (i: Insumo) => <span className="font-medium text-text">{i.nombre}</span> },
-          { header: 'Categoría', render: (i: Insumo) => <span className="text-text-muted">{i.categoria}</span> },
-          { header: 'Existencia', render: (i: Insumo) => <span className="num text-text">{i.existencia} {i.unidad}</span> },
-          { header: 'Mínimo', render: (i: Insumo) => <span className="num text-text-muted">{i.minimo} {i.unidad}</span> },
-          { header: 'Costo', render: (i: Insumo) => <span className="num text-text">{formatCurrency(i.costoUnitario)}</span> },
-          { header: 'Nivel', render: (i: Insumo) => <Badge tone={nivelBadge[i.nivel].tone}>{nivelBadge[i.nivel].label}</Badge> },
+          { header: 'Insumo', render: (i: InsumoApi) => <span className="font-medium text-text">{i.nombre}</span> },
+          { header: 'Categoría', render: (i: InsumoApi) => <span className="text-text-muted">{i.categoria ?? '—'}</span> },
+          { header: 'Existencia', render: (i: InsumoApi) => <span className="num text-text">{i.existencia} {i.unidad}</span> },
+          { header: 'Mínimo', render: (i: InsumoApi) => <span className="num text-text-muted">{i.minimo} {i.unidad}</span> },
+          { header: 'Costo', render: (i: InsumoApi) => <span className="num text-text">{formatCurrency(i.costoUnitario)}</span> },
+          { header: 'Nivel', render: (i: InsumoApi) => <Badge tone={nivelBadge[i.nivel].tone}>{nivelBadge[i.nivel].label}</Badge> },
         ]}
         filas={insumos}
         entidad="insumo"
         describir={(i) => i.nombre}
         onEditar={(i) => { setEditando(i); setAbierto(true); }}
-        onEliminar={(i) => setInsumos((prev) => prev.filter((x) => x.id !== i.id))}
+        onEliminar={async (i) => { await eliminar.mutateAsync(i.id); }}
       />
 
       {abierto && <InsumoModal insumo={editando} medidas={medidas} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
@@ -477,10 +509,10 @@ function InsumoModal({
   onCerrar,
   onGuardar,
 }: {
-  insumo: Insumo | null;
+  insumo: InsumoApi | null;
   medidas: Medida[];
   onCerrar: () => void;
-  onGuardar: (i: Insumo) => void;
+  onGuardar: (input: InsumoInput) => void;
 }) {
   const [nombre, setNombre] = useState(insumo?.nombre ?? '');
   const [categoria, setCategoria] = useState(insumo?.categoria ?? '');
@@ -524,20 +556,16 @@ function InsumoModal({
       <PieModal
         onCerrar={onCerrar}
         valido={valido}
-        onGuardar={() => {
-          const ex = parseFloat(existencia) || 0;
-          const min = parseFloat(minimo) || 0;
+        onGuardar={() =>
           onGuardar({
-            id: insumo?.id ?? uid('i'),
             nombre: nombre.trim(),
-            categoria: categoria.trim() || 'General',
-            existencia: ex,
+            categoria: categoria.trim() || undefined,
             unidad: unidad || 'u',
-            minimo: min,
+            existencia: parseFloat(existencia) || 0,
+            minimo: parseFloat(minimo) || 0,
             costoUnitario: parseFloat(costo) || 0,
-            nivel: calcularNivel(ex, min),
-          });
-        }}
+          })
+        }
       />
     </ModalShell>
   );
@@ -547,35 +575,42 @@ function InsumoModal({
 /*  Proveedores                                                       */
 /* ================================================================== */
 
-function ProveedoresCat({
-  proveedores,
-  setProveedores,
-}: {
-  proveedores: Proveedor[];
-  setProveedores: React.Dispatch<React.SetStateAction<Proveedor[]>>;
-}) {
-  const [editando, setEditando] = useState<Proveedor | null>(null);
+function ProveedoresCat() {
+  const [editando, setEditando] = useState<ProveedorApi | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const toast = useToast();
+  const { data: proveedores = [] } = useProveedores();
+  const { crear, editar, eliminar } = useProveedorMutations();
 
-  function guardar(p: Proveedor) {
-    setProveedores((prev) => (prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p]));
-    setAbierto(false);
+  async function guardar(input: ProveedorInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Proveedor "${input.nombre}" actualizado.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Proveedor "${input.nombre}" creado.`);
+      }
+      setAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el proveedor.');
+    }
   }
 
   return (
     <CatalogoLayout titulo="Proveedores" total={proveedores.length} onNuevo={() => { setEditando(null); setAbierto(true); }}>
       <Tabla
         columnas={[
-          { header: 'Proveedor', render: (p: Proveedor) => <span className="font-medium text-text">{p.nombre}</span> },
-          { header: 'Contacto', render: (p: Proveedor) => <span className="text-text-muted">{p.contacto}</span> },
-          { header: 'Teléfono', render: (p: Proveedor) => <span className="num text-text-muted">{p.telefono}</span> },
-          { header: 'Correo', render: (p: Proveedor) => <span className="text-text-muted">{p.email}</span> },
+          { header: 'Proveedor', render: (p: ProveedorApi) => <span className="font-medium text-text">{p.nombre}</span> },
+          { header: 'Contacto', render: (p: ProveedorApi) => <span className="text-text-muted">{p.contacto || '—'}</span> },
+          { header: 'Teléfono', render: (p: ProveedorApi) => <span className="num text-text-muted">{p.telefono || '—'}</span> },
+          { header: 'Correo', render: (p: ProveedorApi) => <span className="text-text-muted">{p.email || '—'}</span> },
         ]}
         filas={proveedores}
         entidad="proveedor"
         describir={(p) => p.nombre}
         onEditar={(p) => { setEditando(p); setAbierto(true); }}
-        onEliminar={(p) => setProveedores((prev) => prev.filter((x) => x.id !== p.id))}
+        onEliminar={async (p) => { await eliminar.mutateAsync(p.id); }}
       />
 
       {abierto && <ProveedorModal proveedor={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
@@ -588,9 +623,9 @@ function ProveedorModal({
   onCerrar,
   onGuardar,
 }: {
-  proveedor: Proveedor | null;
+  proveedor: ProveedorApi | null;
   onCerrar: () => void;
-  onGuardar: (p: Proveedor) => void;
+  onGuardar: (input: ProveedorInput) => void;
 }) {
   const [nombre, setNombre] = useState(proveedor?.nombre ?? '');
   const [contacto, setContacto] = useState(proveedor?.contacto ?? '');
@@ -620,7 +655,12 @@ function ProveedorModal({
         onCerrar={onCerrar}
         valido={valido}
         onGuardar={() =>
-          onGuardar({ id: proveedor?.id ?? uid('prov'), nombre: nombre.trim(), contacto: contacto.trim(), telefono: telefono.trim(), email: email.trim() })
+          onGuardar({
+            nombre: nombre.trim(),
+            contacto: contacto.trim() || undefined,
+            telefono: telefono.trim() || undefined,
+            email: email.trim() || undefined,
+          })
         }
       />
     </ModalShell>
@@ -681,7 +721,7 @@ function Tabla<T extends { id: string }>({
   /** Texto que identifica la fila en el diálogo (p. ej. su nombre). */
   describir: (row: T) => string;
   onEditar: (row: T) => void;
-  onEliminar: (row: T) => void;
+  onEliminar: (row: T) => void | Promise<void>;
 }) {
   const confirm = useConfirm();
   const toast = useToast();
@@ -695,8 +735,12 @@ function Tabla<T extends { id: string }>({
       peligro: true,
     });
     if (!ok) return;
-    onEliminar(row);
-    toast.info(`${entidad[0].toUpperCase()}${entidad.slice(1)} "${nombre}" eliminado.`);
+    try {
+      await onEliminar(row);
+      toast.info(`${entidad[0].toUpperCase()}${entidad.slice(1)} "${nombre}" eliminado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `No se pudo eliminar ${entidad}.`);
+    }
   }
 
   if (filas.length === 0) {

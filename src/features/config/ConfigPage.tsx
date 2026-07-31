@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import {
   Store,
   Printer,
@@ -19,113 +19,23 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cn } from '@/lib/cn';
-
-/* ------------------------------------------------------------------ */
-/*  Catálogo de permisos por módulo                                   */
-/* ------------------------------------------------------------------ */
-
-interface Permiso {
-  id: string;
-  label: string;
-}
-interface GrupoPermisos {
-  modulo: string;
-  permisos: Permiso[];
-}
-
-const CATALOGO_PERMISOS: GrupoPermisos[] = [
-  {
-    modulo: 'Punto de venta',
-    permisos: [
-      { id: 'pos.ver', label: 'Ver y tomar pedidos' },
-      { id: 'pos.cobrar', label: 'Cobrar' },
-      { id: 'pos.descuento', label: 'Aplicar descuentos' },
-      { id: 'pos.cancelar', label: 'Anular ticket' },
-    ],
-  },
-  {
-    modulo: 'Caja',
-    permisos: [
-      { id: 'caja.abrir', label: 'Abrir / cerrar caja' },
-      { id: 'caja.retiro', label: 'Retiros y cortes' },
-    ],
-  },
-  {
-    modulo: 'Mesas',
-    permisos: [
-      { id: 'mesas.ver', label: 'Ver mesas' },
-      { id: 'mesas.gestionar', label: 'Abrir, mover y unir' },
-      { id: 'mesas.dividir', label: 'Dividir cuenta' },
-    ],
-  },
-  {
-    modulo: 'Cocina (KDS)',
-    permisos: [
-      { id: 'kds.ver', label: 'Ver comandas' },
-      { id: 'kds.marcar', label: 'Marcar preparado / entregar' },
-    ],
-  },
-  {
-    modulo: 'Inventario',
-    permisos: [
-      { id: 'inv.ver', label: 'Ver existencias' },
-      { id: 'inv.ajustar', label: 'Ajustes y mermas' },
-      { id: 'inv.comprar', label: 'Órdenes de compra' },
-    ],
-  },
-  {
-    modulo: 'Reportes',
-    permisos: [
-      { id: 'rep.ver', label: 'Ver reportes' },
-      { id: 'rep.exportar', label: 'Exportar' },
-    ],
-  },
-  {
-    modulo: 'Configuración',
-    permisos: [
-      { id: 'cfg.negocio', label: 'Datos del negocio' },
-      { id: 'cfg.usuarios', label: 'Usuarios y roles' },
-    ],
-  },
-];
-
-const TODOS_LOS_PERMISOS = CATALOGO_PERMISOS.flatMap((g) => g.permisos.map((p) => p.id));
-
-/* ------------------------------------------------------------------ */
-/*  Tipos y datos de demostración                                     */
-/* ------------------------------------------------------------------ */
-
-interface Rol {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  permisos: string[];
-  protegido?: boolean;
-}
-
-interface Usuario {
-  id: string;
-  nombre: string;
-  email: string;
-  rolId: string;
-  activo: boolean;
-}
-
-const ROLES_INICIALES: Rol[] = [
-  { id: 'r-admin', nombre: 'Administrador', descripcion: 'Acceso total al sistema', permisos: [...TODOS_LOS_PERMISOS], protegido: true },
-  { id: 'r-cajero', nombre: 'Cajero', descripcion: 'Cobra y maneja la caja', permisos: ['pos.ver', 'pos.cobrar', 'pos.descuento', 'pos.cancelar', 'caja.abrir', 'caja.retiro'] },
-  { id: 'r-mesero', nombre: 'Mesero', descripcion: 'Toma pedidos y gestiona mesas', permisos: ['pos.ver', 'mesas.ver', 'mesas.gestionar', 'mesas.dividir', 'kds.ver'] },
-  { id: 'r-barista', nombre: 'Barista / Cocina', descripcion: 'Prepara y marca comandas', permisos: ['kds.ver', 'kds.marcar', 'rep.ver'] },
-  { id: 'r-almacen', nombre: 'Almacenista', descripcion: 'Controla el inventario', permisos: ['inv.ver', 'inv.ajustar', 'inv.comprar'] },
-];
-
-const USUARIOS_INICIALES: Usuario[] = [
-  { id: 'u-1', nombre: 'Owner GOPIC', email: 'admin@gopic.gt', rolId: 'r-admin', activo: true },
-  { id: 'u-2', nombre: 'Ana Rodríguez', email: 'ana@gopic.gt', rolId: 'r-cajero', activo: true },
-  { id: 'u-3', nombre: 'Luis Pérez', email: 'luis@gopic.gt', rolId: 'r-mesero', activo: true },
-  { id: 'u-4', nombre: 'Marta López', email: 'marta@gopic.gt', rolId: 'r-barista', activo: true },
-  { id: 'u-5', nombre: 'Carlos Gómez', email: 'carlos@gopic.gt', rolId: 'r-almacen', activo: false },
-];
+import { useToast } from '@/lib/toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { useSucursal, useSucursalMutation } from '@/lib/sucursal';
+import {
+  useRoles,
+  useCatalogoPermisos,
+  useRolMutations,
+  useUsuarios,
+  useUsuarioMutations,
+} from '@/lib/accesos';
+import {
+  type RolApi,
+  type GrupoPermisosApi,
+  type RolInput,
+  type UsuarioAdminApi,
+  type UsuarioCrearInput,
+} from '@/lib/api';
 
 function iniciales(nombre: string): string {
   return nombre
@@ -150,20 +60,10 @@ const PESTANAS: { id: Pestana; label: string; icon: LucideIcon }[] = [
 
 export function ConfigPage() {
   const [pestana, setPestana] = useState<Pestana>('general');
-  const [roles, setRoles] = useState<Rol[]>(ROLES_INICIALES);
-  const [usuarios, setUsuarios] = useState<Usuario[]>(USUARIOS_INICIALES);
 
   return (
     <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
-      <PageHeader
-        title="Configuración"
-        subtitle="Negocio, impresión y control de accesos"
-        actions={
-          <Button>
-            <Save size={18} /> Guardar cambios
-          </Button>
-        }
-      />
+      <PageHeader title="Configuración" subtitle="Negocio, impresión y control de accesos" />
 
       {/* Pestañas */}
       <div className="flex gap-1 border-b border-border">
@@ -184,8 +84,8 @@ export function ConfigPage() {
       </div>
 
       {pestana === 'general' && <GeneralTab />}
-      {pestana === 'usuarios' && <UsuariosTab usuarios={usuarios} setUsuarios={setUsuarios} roles={roles} />}
-      {pestana === 'roles' && <RolesTab roles={roles} setRoles={setRoles} usuarios={usuarios} />}
+      {pestana === 'usuarios' && <UsuariosTab />}
+      {pestana === 'roles' && <RolesTab />}
     </div>
   );
 }
@@ -195,21 +95,62 @@ export function ConfigPage() {
 /* ------------------------------------------------------------------ */
 
 function GeneralTab() {
+  const { data: sucursal } = useSucursal();
+  const guardar = useSucursalMutation();
+  const toast = useToast();
+
+  const [form, setForm] = useState({ nombre: '', nit: '', telefono: '', moneda: '', direccion: '' });
+
+  // Rellena el formulario cuando llegan los datos del negocio.
+  useEffect(() => {
+    if (sucursal) {
+      setForm({
+        nombre: sucursal.nombre,
+        nit: sucursal.nit,
+        telefono: sucursal.telefono,
+        moneda: sucursal.moneda,
+        direccion: sucursal.direccion,
+      });
+    }
+  }, [sucursal]);
+
+  const set = (campo: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [campo]: e.target.value }));
+
+  async function onGuardar() {
+    try {
+      await guardar.mutateAsync(form);
+      toast.exito('Datos del negocio guardados.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudieron guardar los datos.');
+    }
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <SectionCard icon={Store} title="Datos del negocio" desc="Información general de la sucursal">
-        <Field label="Nombre comercial" value="GOPIC — Preparaciones con sabor" />
+        <Field label="Nombre comercial" value={form.nombre} onChange={set('nombre')} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Teléfono" value="+502 5555 1234" />
-          <Field label="Moneda" value="GTQ (Q)" />
+          <Field label="NIT" value={form.nit} onChange={set('nit')} />
+          <Field label="Teléfono" value={form.telefono} onChange={set('telefono')} />
         </div>
-        <Field label="Dirección" value="Zona 10, Ciudad de Guatemala" />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Moneda" value={form.moneda} onChange={set('moneda')} hint="Código ISO (p. ej. GTQ)" />
+          <div />
+        </div>
+        <Field label="Dirección" value={form.direccion} onChange={set('direccion')} />
+        <div className="flex justify-end pt-1">
+          <Button onClick={onGuardar} disabled={guardar.isPending || !form.nombre.trim()}>
+            <Save size={18} /> {guardar.isPending ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </div>
       </SectionCard>
 
       <SectionCard icon={Printer} title="Impresoras" desc="Ticket y comandas por estación">
-        <Field label="Impresora de tickets" value="Epson TM-T20 (mostrador)" />
-        <Field label="Impresora de cocina" value="Star TSP143 (cocina)" />
-        <Field label="Impresora de barra" value="Epson TM-T20 (barra)" />
+        <Field label="Impresora de tickets" value="Epson TM-T20 (mostrador)" readOnly />
+        <Field label="Impresora de cocina" value="Star TSP143 (cocina)" readOnly />
+        <Field label="Impresora de barra" value="Epson TM-T20 (barra)" readOnly />
+        <p className="text-xs text-text-muted">La configuración de impresoras se habilitará con el módulo de impresión.</p>
       </SectionCard>
     </div>
   );
@@ -219,27 +160,46 @@ function GeneralTab() {
 /*  Tab Usuarios                                                      */
 /* ------------------------------------------------------------------ */
 
-function UsuariosTab({
-  usuarios,
-  setUsuarios,
-  roles,
-}: {
-  usuarios: Usuario[];
-  setUsuarios: Dispatch<SetStateAction<Usuario[]>>;
-  roles: Rol[];
-}) {
+function UsuariosTab() {
   const [modal, setModal] = useState(false);
-  const nombreRol = (id: string) => roles.find((r) => r.id === id)?.nombre ?? '—';
+  const toast = useToast();
+  const confirm = useConfirm();
+  const { data: usuarios = [] } = useUsuarios();
+  const { data: roles = [] } = useRoles();
+  const { crear, editar, eliminar } = useUsuarioMutations();
 
-  function toggleActivo(id: string) {
-    setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, activo: !u.activo } : u)));
+  async function toggleActivo(u: UsuarioAdminApi) {
+    try {
+      await editar.mutateAsync({ id: u.id, data: { activo: !u.activo } });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo actualizar.');
+    }
   }
-  function eliminar(id: string) {
-    setUsuarios((prev) => prev.filter((u) => u.id !== id));
+
+  async function borrar(u: UsuarioAdminApi) {
+    const ok = await confirm({
+      titulo: 'Eliminar usuario',
+      mensaje: `¿Eliminar la cuenta de "${u.nombre}" (${u.email})? Perderá el acceso al sistema.`,
+      confirmar: 'Eliminar',
+      peligro: true,
+    });
+    if (!ok) return;
+    try {
+      await eliminar.mutateAsync(u.id);
+      toast.info(`Cuenta de "${u.nombre}" eliminada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.');
+    }
   }
-  function crear(nuevo: Omit<Usuario, 'id'>) {
-    setUsuarios((prev) => [...prev, { ...nuevo, id: `u-${Date.now()}` }]);
-    setModal(false);
+
+  async function onCrear(data: UsuarioCrearInput) {
+    try {
+      await crear.mutateAsync(data);
+      toast.exito(`Usuario "${data.nombre}" creado.`);
+      setModal(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo crear el usuario.');
+    }
   }
 
   return (
@@ -249,7 +209,7 @@ function UsuariosTab({
           <h2 className="font-display text-lg font-semibold text-text">Usuarios del sistema</h2>
           <p className="text-sm text-text-muted">{usuarios.length} cuentas · {usuarios.filter((u) => u.activo).length} activas</p>
         </div>
-        <Button onClick={() => setModal(true)}>
+        <Button onClick={() => setModal(true)} disabled={roles.length === 0}>
           <UserPlus size={18} /> Nuevo usuario
         </Button>
       </div>
@@ -279,11 +239,11 @@ function UsuariosTab({
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <Badge tone="brand">{nombreRol(u.rolId)}</Badge>
+                  <Badge tone="brand">{u.rol}</Badge>
                 </td>
                 <td className="px-4 py-3">
                   <button
-                    onClick={() => toggleActivo(u.id)}
+                    onClick={() => toggleActivo(u)}
                     className="inline-flex items-center gap-2"
                     title={u.activo ? 'Desactivar' : 'Activar'}
                   >
@@ -295,7 +255,7 @@ function UsuariosTab({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => eliminar(u.id)}
+                    onClick={() => borrar(u)}
                     aria-label="Eliminar usuario"
                     className="grid h-8 w-8 place-items-center rounded-md border border-border text-danger hover:bg-danger/10"
                   >
@@ -308,7 +268,7 @@ function UsuariosTab({
         </table>
       </div>
 
-      {modal && <UsuarioModal roles={roles} onCerrar={() => setModal(false)} onCrear={crear} />}
+      {modal && <UsuarioModal roles={roles} onCerrar={() => setModal(false)} onCrear={onCrear} />}
     </Card>
   );
 }
@@ -318,58 +278,47 @@ function UsuarioModal({
   onCerrar,
   onCrear,
 }: {
-  roles: Rol[];
+  roles: RolApi[];
   onCerrar: () => void;
-  onCrear: (u: Omit<Usuario, 'id'>) => void;
+  onCrear: (u: UsuarioCrearInput) => void;
 }) {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [rolId, setRolId] = useState(roles[0]?.id ?? '');
-  const [activo, setActivo] = useState(true);
-  const valido = nombre.trim() !== '' && email.trim() !== '';
+  const valido = nombre.trim() !== '' && /.+@.+\..+/.test(email) && password.length >= 6 && rolId !== '';
+
+  const inputCls =
+    'mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none';
 
   return (
     <ModalShell titulo="Nuevo usuario" onCerrar={onCerrar}>
       <div className="space-y-4 p-4">
         <label className="block">
           <span className="text-sm font-medium text-text">Nombre completo</span>
-          <input
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            autoFocus
-            className="mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none"
-          />
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus className={inputCls} />
         </label>
         <label className="block">
           <span className="text-sm font-medium text-text">Correo</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="usuario@gopic.gt"
-            className="mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none"
-          />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@gopic.gt" className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-text">Contraseña temporal</span>
+          <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres" className={cn(inputCls, 'num')} />
+          <span className="mt-1 block text-xs text-text-muted">El usuario podrá cambiarla luego desde recuperación.</span>
         </label>
         <label className="block">
           <span className="text-sm font-medium text-text">Rol</span>
-          <select
-            value={rolId}
-            onChange={(e) => setRolId(e.target.value)}
-            className="mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none"
-          >
+          <select value={rolId} onChange={(e) => setRolId(e.target.value)} className={inputCls}>
             {roles.map((r) => (
               <option key={r.id} value={r.id}>{r.nombre}</option>
             ))}
           </select>
         </label>
-        <button onClick={() => setActivo((v) => !v)} className="flex items-center gap-2">
-          <Switch on={activo} />
-          <span className="text-sm text-text">{activo ? 'Cuenta activa' : 'Cuenta inactiva'}</span>
-        </button>
       </div>
       <footer className="flex justify-end gap-2 border-t border-border p-4">
         <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
-        <Button disabled={!valido} onClick={() => onCrear({ nombre, email, rolId, activo })}>
+        <Button disabled={!valido} onClick={() => onCrear({ nombre: nombre.trim(), email: email.trim(), password, rolId })}>
           <Check size={18} /> Crear usuario
         </Button>
       </footer>
@@ -381,30 +330,47 @@ function UsuarioModal({
 /*  Tab Roles y permisos                                              */
 /* ------------------------------------------------------------------ */
 
-function RolesTab({
-  roles,
-  setRoles,
-  usuarios,
-}: {
-  roles: Rol[];
-  setRoles: Dispatch<SetStateAction<Rol[]>>;
-  usuarios: Usuario[];
-}) {
-  const [editando, setEditando] = useState<Rol | null>(null);
+function RolesTab() {
+  const [editando, setEditando] = useState<RolApi | null>(null);
   const [creando, setCreando] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const { data: roles = [] } = useRoles();
+  const { data: catalogo = [] } = useCatalogoPermisos();
+  const { crear, editar, eliminar } = useRolMutations();
 
-  const contarUsuarios = (rolId: string) => usuarios.filter((u) => u.rolId === rolId).length;
+  const totalPermisos = catalogo.reduce((s, g) => s + g.permisos.length, 0);
 
-  function guardar(rol: Rol) {
-    setRoles((prev) => {
-      const existe = prev.some((r) => r.id === rol.id);
-      return existe ? prev.map((r) => (r.id === rol.id ? rol : r)) : [...prev, rol];
-    });
-    setEditando(null);
-    setCreando(false);
+  async function guardar(input: RolInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Rol "${input.nombre}" actualizado.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Rol "${input.nombre}" creado.`);
+      }
+      setEditando(null);
+      setCreando(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el rol.');
+    }
   }
-  function eliminar(id: string) {
-    setRoles((prev) => prev.filter((r) => r.id !== id));
+
+  async function borrar(rol: RolApi) {
+    const ok = await confirm({
+      titulo: 'Eliminar rol',
+      mensaje: `¿Eliminar el rol "${rol.nombre}"? Esta acción no se puede deshacer.`,
+      confirmar: 'Eliminar',
+      peligro: true,
+    });
+    if (!ok) return;
+    try {
+      await eliminar.mutateAsync(rol.id);
+      toast.info(`Rol "${rol.nombre}" eliminado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar el rol.');
+    }
   }
 
   return (
@@ -419,21 +385,21 @@ function RolesTab({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {roles.map((rol) => {
           const total = rol.permisos.length;
-          const todos = total === TODOS_LOS_PERMISOS.length;
+          const todos = totalPermisos > 0 && total === totalPermisos;
           return (
             <Card key={rol.id} className="flex flex-col p-5">
               <div className="flex items-start justify-between">
                 <span className="grid h-10 w-10 place-items-center rounded-md bg-brand-100 text-brand-700">
                   <ShieldCheck size={20} />
                 </span>
-                {rol.protegido && <Badge tone="info">Sistema</Badge>}
+                {rol.esSistema && <Badge tone="info">Sistema</Badge>}
               </div>
               <h3 className="mt-3 font-display text-lg font-semibold text-text">{rol.nombre}</h3>
               <p className="text-sm text-text-muted">{rol.descripcion}</p>
 
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
                 <span>{todos ? 'Todos los permisos' : `${total} permiso${total === 1 ? '' : 's'}`}</span>
-                <span>· {contarUsuarios(rol.id)} usuario{contarUsuarios(rol.id) === 1 ? '' : 's'}</span>
+                <span>· {rol.usuarios} usuario{rol.usuarios === 1 ? '' : 's'}</span>
               </div>
 
               <div className="mt-4 flex gap-2">
@@ -441,10 +407,10 @@ function RolesTab({
                   <Pencil size={16} /> Editar permisos
                 </Button>
                 <button
-                  onClick={() => eliminar(rol.id)}
-                  disabled={rol.protegido}
+                  onClick={() => borrar(rol)}
+                  disabled={rol.esSistema || rol.usuarios > 0}
                   aria-label="Eliminar rol"
-                  title={rol.protegido ? 'Rol del sistema (no se puede eliminar)' : 'Eliminar rol'}
+                  title={rol.esSistema ? 'Rol del sistema (no se puede eliminar)' : rol.usuarios > 0 ? 'Tiene usuarios asignados' : 'Eliminar rol'}
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Trash2 size={16} />
@@ -456,42 +422,47 @@ function RolesTab({
       </div>
 
       {(editando || creando) && (
-        <RolModal rol={editando} onCerrar={() => { setEditando(null); setCreando(false); }} onGuardar={guardar} />
+        <RolModal rol={editando} catalogo={catalogo} onCerrar={() => { setEditando(null); setCreando(false); }} onGuardar={guardar} />
       )}
     </div>
   );
 }
 
+/** Etiqueta legible para el nombre de módulo (código en minúsculas del backend). */
+const moduloLabel = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
+
 function RolModal({
   rol,
+  catalogo,
   onCerrar,
   onGuardar,
 }: {
-  rol: Rol | null;
+  rol: RolApi | null;
+  catalogo: GrupoPermisosApi[];
   onCerrar: () => void;
-  onGuardar: (r: Rol) => void;
+  onGuardar: (input: RolInput) => void;
 }) {
   const [nombre, setNombre] = useState(rol?.nombre ?? '');
   const [descripcion, setDescripcion] = useState(rol?.descripcion ?? '');
   const [permisos, setPermisos] = useState<Set<string>>(new Set(rol?.permisos ?? []));
-  const bloqueado = rol?.protegido ?? false;
+  const bloqueado = rol?.esSistema ?? false;
 
   const totalSel = permisos.size;
   const valido = nombre.trim() !== '';
 
-  function toggle(id: string) {
+  function toggle(codigo: string) {
     setPermisos((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(codigo) ? next.delete(codigo) : next.add(codigo);
       return next;
     });
   }
-  function toggleGrupo(grupo: GrupoPermisos) {
-    const ids = grupo.permisos.map((p) => p.id);
-    const todos = ids.every((id) => permisos.has(id));
+  function toggleGrupo(grupo: GrupoPermisosApi) {
+    const codigos = grupo.permisos.map((p) => p.codigo);
+    const todos = codigos.every((c) => permisos.has(c));
     setPermisos((prev) => {
       const next = new Set(prev);
-      ids.forEach((id) => (todos ? next.delete(id) : next.add(id)));
+      codigos.forEach((c) => (todos ? next.delete(c) : next.add(c)));
       return next;
     });
   }
@@ -524,22 +495,22 @@ function RolModal({
         </div>
 
         <div className="space-y-3">
-          {CATALOGO_PERMISOS.map((grupo) => {
-            const ids = grupo.permisos.map((p) => p.id);
-            const todos = ids.every((id) => permisos.has(id));
+          {catalogo.map((grupo) => {
+            const codigos = grupo.permisos.map((p) => p.codigo);
+            const todos = codigos.every((c) => permisos.has(c));
             return (
               <div key={grupo.modulo} className="rounded-lg border border-border">
                 <div className="flex items-center justify-between border-b border-border bg-surface-alt px-3 py-2">
-                  <span className="text-sm font-semibold text-text">{grupo.modulo}</span>
+                  <span className="text-sm font-semibold text-text">{moduloLabel(grupo.modulo)}</span>
                   <button onClick={() => toggleGrupo(grupo)} className="text-xs font-medium text-action-600 hover:underline">
                     {todos ? 'Quitar todo' : 'Seleccionar todo'}
                   </button>
                 </div>
                 <div className="grid gap-1 p-2 sm:grid-cols-2">
                   {grupo.permisos.map((p) => (
-                    <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-alt">
-                      <Checkbox on={permisos.has(p.id)} onClick={() => toggle(p.id)} />
-                      <span className="text-sm text-text">{p.label}</span>
+                    <label key={p.codigo} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-alt">
+                      <Checkbox on={permisos.has(p.codigo)} onClick={() => toggle(p.codigo)} />
+                      <span className="text-sm text-text">{p.descripcion}</span>
                     </label>
                   ))}
                 </div>
@@ -552,15 +523,7 @@ function RolModal({
         <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
         <Button
           disabled={!valido}
-          onClick={() =>
-            onGuardar({
-              id: rol?.id ?? `r-${Date.now()}`,
-              nombre,
-              descripcion,
-              permisos: [...permisos],
-              protegido: rol?.protegido,
-            })
-          }
+          onClick={() => onGuardar({ nombre: nombre.trim(), descripcion, permisos: [...permisos] })}
         >
           <Check size={18} /> Guardar rol
         </Button>
@@ -630,13 +593,30 @@ function Checkbox({ on, onClick }: { on: boolean; onClick: () => void }) {
   );
 }
 
-function Field({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Field({
+  label,
+  value,
+  hint,
+  onChange,
+  readOnly,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  readOnly?: boolean;
+}) {
   return (
     <label className="block">
       <span className="text-sm font-medium text-text">{label}</span>
       <input
-        defaultValue={value}
-        className="mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:outline-none"
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly || !onChange}
+        className={cn(
+          'mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none',
+          (readOnly || !onChange) && 'opacity-70',
+        )}
       />
       {hint && <span className="mt-1 block text-xs text-text-muted">{hint}</span>}
     </label>

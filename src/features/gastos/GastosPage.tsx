@@ -21,14 +21,12 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import {
-  gastosSeed,
-  categoriasGasto,
-  type Gasto,
-  type CategoriaGasto,
-  type EstadoGasto,
-  type MetodoGasto,
-} from '@/mock/data';
+import { categoriasGasto } from '@/mock/data';
+import { useGastos, useGastoMutations } from '@/lib/gastos';
+import { type GastoApi, type GastoInput } from '@/lib/api';
+
+type MetodoGasto = GastoApi['metodo'];
+type EstadoGasto = GastoApi['estado'];
 
 const METODOS: MetodoGasto[] = ['Efectivo', 'Transferencia', 'Tarjeta'];
 
@@ -40,11 +38,12 @@ const estadoConfig: Record<EstadoGasto, { label: string; tone: 'success' | 'warn
 const barColors = ['bg-brand-500', 'bg-action-500', 'bg-accent-400', 'bg-info', 'bg-brand-300', 'bg-action-600'];
 
 export function GastosPage() {
-  const [gastos, setGastos] = useState<Gasto[]>(gastosSeed);
+  const { data: gastos = [] } = useGastos();
+  const { crear, editar: editarMut, eliminar: eliminarMut } = useGastoMutations();
   const [busqueda, setBusqueda] = useState('');
-  const [filtroCat, setFiltroCat] = useState<CategoriaGasto | 'todas'>('todas');
+  const [filtroCat, setFiltroCat] = useState<string>('todas');
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [editando, setEditando] = useState<Gasto | null>(null);
+  const [editando, setEditando] = useState<GastoApi | null>(null);
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -54,7 +53,7 @@ export function GastosPage() {
 
   // Desglose por categoría (ordenado de mayor a menor).
   const porCategoria = useMemo(() => {
-    const mapa = new Map<CategoriaGasto, number>();
+    const mapa = new Map<string, number>();
     for (const g of gastos) mapa.set(g.categoria, (mapa.get(g.categoria) ?? 0) + g.monto);
     return [...mapa.entries()].sort((a, b) => b[1] - a[1]);
   }, [gastos]);
@@ -68,19 +67,31 @@ export function GastosPage() {
     return okCat && okQ;
   });
 
-  function marcarPagado(g: Gasto) {
-    setGastos((prev) => prev.map((x) => (x.id === g.id ? { ...x, estado: 'pagado' } : x)));
-    toast.exito(`"${g.concepto}" marcado como pagado.`);
+  async function marcarPagado(g: GastoApi) {
+    try {
+      await editarMut.mutateAsync({ id: g.id, data: { estado: 'pagado' } });
+      toast.exito(`"${g.concepto}" marcado como pagado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo actualizar.');
+    }
   }
 
-  function guardar(gasto: Gasto) {
-    const esNuevo = !gastos.some((x) => x.id === gasto.id);
-    setGastos((prev) => (esNuevo ? [gasto, ...prev] : prev.map((x) => (x.id === gasto.id ? gasto : x))));
-    setModalAbierto(false);
-    toast.exito(esNuevo ? `Gasto "${gasto.concepto}" registrado.` : `Gasto "${gasto.concepto}" actualizado.`);
+  async function guardar(input: GastoInput) {
+    try {
+      if (editando) {
+        await editarMut.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Gasto "${input.concepto}" actualizado.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Gasto "${input.concepto}" registrado.`);
+      }
+      setModalAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el gasto.');
+    }
   }
 
-  async function eliminar(g: Gasto) {
+  async function eliminar(g: GastoApi) {
     const ok = await confirm({
       titulo: 'Eliminar gasto',
       mensaje: `¿Eliminar "${g.concepto}" (${formatCurrency(g.monto)})? Esta acción no se puede deshacer.`,
@@ -88,8 +99,12 @@ export function GastosPage() {
       peligro: true,
     });
     if (!ok) return;
-    setGastos((prev) => prev.filter((x) => x.id !== g.id));
-    toast.info(`Gasto "${g.concepto}" eliminado.`);
+    try {
+      await eliminarMut.mutateAsync(g.id);
+      toast.info(`Gasto "${g.concepto}" eliminado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.');
+    }
   }
 
   return (
@@ -147,7 +162,7 @@ export function GastosPage() {
             </div>
             <select
               value={filtroCat}
-              onChange={(e) => setFiltroCat(e.target.value as CategoriaGasto | 'todas')}
+              onChange={(e) => setFiltroCat(e.target.value)}
               className="h-10 rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none"
             >
               <option value="todas">Todas las categorías</option>
@@ -259,13 +274,13 @@ function GastoModal({
   onCerrar,
   onGuardar,
 }: {
-  gasto: Gasto | null;
+  gasto: GastoApi | null;
   onCerrar: () => void;
-  onGuardar: (g: Gasto) => void;
+  onGuardar: (input: GastoInput) => void;
 }) {
   const [concepto, setConcepto] = useState(gasto?.concepto ?? '');
-  const [categoria, setCategoria] = useState<CategoriaGasto>(gasto?.categoria ?? 'Servicios');
-  const [proveedor, setProveedor] = useState(gasto?.proveedor ?? '');
+  const [categoria, setCategoria] = useState<string>(gasto?.categoria ?? 'Servicios');
+  const [proveedor, setProveedor] = useState(gasto?.proveedor && gasto.proveedor !== '—' ? gasto.proveedor : '');
   const [metodo, setMetodo] = useState<MetodoGasto>(gasto?.metodo ?? 'Transferencia');
   const [estado, setEstado] = useState<EstadoGasto>(gasto?.estado ?? 'pagado');
   const [monto, setMonto] = useState(gasto ? String(gasto.monto) : '');
@@ -278,11 +293,9 @@ function GastoModal({
 
   function guardar() {
     onGuardar({
-      id: gasto?.id ?? `g-${Date.now()}`,
-      fecha: gasto?.fecha ?? new Date().toLocaleDateString('es-GT'),
       concepto: concepto.trim(),
       categoria,
-      proveedor: proveedor.trim() || '—',
+      proveedor: proveedor.trim() || undefined,
       metodo,
       estado,
       monto: montoNum,
@@ -311,7 +324,7 @@ function GastoModal({
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm font-medium text-text">Categoría</span>
-            <select value={categoria} onChange={(e) => setCategoria(e.target.value as CategoriaGasto)} className={inputCls}>
+            <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className={inputCls}>
               {categoriasGasto.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}

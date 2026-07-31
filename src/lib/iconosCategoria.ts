@@ -51,3 +51,11 @@ export function registrarIconosCategoria(cats: { id: string; icono?: string | nu
 export function iconoCategoria(categoriaId: string): LucideIcon {
   return registro[categoriaId] ?? iconoPorCategoria[categoriaId] ?? Utensils;
 }
+
+/** Nombres de icono que la UI ofrece al crear/editar categorías. */
+export const ICONOS_DISPONIBLES = Object.keys(porNombre);
+
+/** Componente lucide para un nombre de icono; genérico si no existe. */
+export function componenteIcono(nombre: string | undefined): LucideIcon {
+  return (nombre && porNombre[nombre]) || Utensils;
+}

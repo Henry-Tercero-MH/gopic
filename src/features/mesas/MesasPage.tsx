@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { cn } from '@/lib/cn';
-import { formatCurrency } from '@/lib/format';
 import { RUTAS } from '@/lib/rutas';
-import { useOperacion, type MesaInput } from '@/lib/operacion';
+import { useMesas, useMesaMutations } from '@/lib/mesas';
+import { type MesaApi, type MesaInput } from '@/lib/api';
 import { useToast } from '@/lib/toast';
-import { useAuth } from '@/lib/auth';
-import type { EstadoMesa, Mesa } from '@/mock/data';
+
+type EstadoMesa = MesaApi['estado'];
 
 const estadoConfig: Record<EstadoMesa, { label: string; tone: 'neutral' | 'action' | 'warning' | 'info'; ring: string }> = {
   libre: { label: 'Libre', tone: 'neutral', ring: 'border-border' },
@@ -21,28 +21,23 @@ const estadoConfig: Record<EstadoMesa, { label: string; tone: 'neutral' | 'actio
 };
 
 export function MesasPage() {
-  const { mesas, abrirMesa, crearMesa, editarMesa, eliminarMesa } = useOperacion();
-  const { user } = useAuth();
+  const { data: mesas = [] } = useMesas();
+  const { crear, editar: editarMut, eliminar: eliminarMut } = useMesaMutations();
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
 
   const [admin, setAdmin] = useState(false);
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [editando, setEditando] = useState<Mesa | null>(null);
+  const [editando, setEditando] = useState<MesaApi | null>(null);
 
   const zonas = [...new Set(mesas.map((m) => m.zona))];
   const ocupadas = mesas.filter((m) => m.estado !== 'libre' && m.estado !== 'reservada').length;
-  const mesero = user?.nombre ?? 'Mesero';
 
-  function abrirCuenta(mesa: Mesa) {
+  function abrirCuenta(mesa: MesaApi) {
     if (mesa.estado === 'reservada') {
       toast.advertencia(`${mesa.nombre} está reservada.`);
       return;
-    }
-    if (mesa.estado === 'libre') {
-      abrirMesa(mesa.id, mesero);
-      toast.exito(`${mesa.nombre} abierta. Toma la comanda.`);
     }
     navigate(`${RUTAS.pos}?mesa=${mesa.id}`);
   }
@@ -52,27 +47,27 @@ export function MesasPage() {
     setModalAbierto(true);
   }
 
-  function editar(mesa: Mesa) {
+  function editar(mesa: MesaApi) {
     setEditando(mesa);
     setModalAbierto(true);
   }
 
-  function guardar(datos: MesaInput) {
-    if (editando) {
-      editarMesa(editando.id, datos);
-      toast.exito(`${datos.nombre} actualizada.`);
-    } else {
-      crearMesa(datos);
-      toast.exito(`${datos.nombre} creada.`);
+  async function guardar(datos: MesaInput) {
+    try {
+      if (editando) {
+        await editarMut.mutateAsync({ id: editando.id, data: datos });
+        toast.exito(`${datos.nombre} actualizada.`);
+      } else {
+        await crear.mutateAsync(datos);
+        toast.exito(`${datos.nombre} creada.`);
+      }
+      setModalAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar la mesa.');
     }
-    setModalAbierto(false);
   }
 
-  async function eliminar(mesa: Mesa) {
-    if (mesa.estado !== 'libre' && mesa.estado !== 'reservada') {
-      toast.error(`${mesa.nombre} tiene una cuenta abierta. Cóbrala antes de eliminarla.`);
-      return;
-    }
+  async function eliminar(mesa: MesaApi) {
     const ok = await confirm({
       titulo: 'Eliminar mesa',
       mensaje: `¿Eliminar "${mesa.nombre}"? Esta acción no se puede deshacer.`,
@@ -80,8 +75,12 @@ export function MesasPage() {
       peligro: true,
     });
     if (!ok) return;
-    eliminarMesa(mesa.id);
-    toast.info(`${mesa.nombre} eliminada.`);
+    try {
+      await eliminarMut.mutateAsync(mesa.id);
+      toast.info(`${mesa.nombre} eliminada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.');
+    }
   }
 
   return (
@@ -171,7 +170,7 @@ function MesaCard({
   onEditar,
   onEliminar,
 }: {
-  mesa: Mesa;
+  mesa: MesaApi;
   admin: boolean;
   onAbrir: () => void;
   onEditar: () => void;
@@ -229,15 +228,11 @@ function MesaCard({
       {mesa.estado === 'libre' ? (
         <span className="mt-4 text-sm text-text-muted">Toca para abrir cuenta</span>
       ) : mesa.estado === 'reservada' ? (
-        <span className="mt-4 text-sm text-info">Reservada 19:00</span>
+        <span className="mt-4 text-sm text-info">Reservada</span>
       ) : (
-        <div className="mt-4 space-y-1">
-          <div className="num text-xl font-semibold text-brand-700">{formatCurrency(mesa.totalActual ?? 0)}</div>
-          <div className="text-xs text-text-muted">
-            {mesa.mesero ?? '—'}
-            {mesa.estado === 'cuenta' && ' · pidió cuenta'}
-          </div>
-        </div>
+        <span className="mt-4 text-sm font-medium text-action-700">
+          {mesa.estado === 'cuenta' ? 'Pidió la cuenta' : 'En servicio'}
+        </span>
       )}
     </button>
   );
@@ -249,7 +244,7 @@ function MesaModal({
   onCerrar,
   onGuardar,
 }: {
-  mesa: Mesa | null;
+  mesa: MesaApi | null;
   zonasExistentes: string[];
   onCerrar: () => void;
   onGuardar: (datos: MesaInput) => void;

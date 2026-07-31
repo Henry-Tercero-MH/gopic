@@ -5,9 +5,14 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { useOperacion, type MetodoPago, type Recompensa } from '@/lib/operacion';
+import { type MetodoPago } from '@/lib/operacion';
+import { useClientes, useRecompensas } from '@/lib/clientes';
+import { type RecompensaApi } from '@/lib/api';
 import { MetodoBtn } from './PosControls';
 import { DENOMINACIONES } from '../constantes';
+
+/** Tasa de acumulación para la vista previa (el backend calcula el valor real al cobrar). */
+const QUETZALES_POR_PUNTO = 10;
 
 export interface Venta {
   folio: string;
@@ -25,9 +30,10 @@ export interface DatosCobro {
 }
 
 /** Descuento en Q que aplica una recompensa de descuento sobre un total. */
-function descuentoDeRecompensa(r: Recompensa, base: number): number {
-  if (r.tipo === 'descuento_monto') return Math.min(r.valor ?? 0, base);
-  if (r.tipo === 'descuento_pct') return (base * (r.valor ?? 0)) / 100;
+function descuentoDeRecompensa(r: RecompensaApi, base: number): number {
+  const valor = Number(r.valor ?? 0);
+  if (r.tipo === 'descuento_monto') return Math.min(valor, base);
+  if (r.tipo === 'descuento_pct') return (base * valor) / 100;
   return 0; // producto gratis no descuenta del total (se regala aparte)
 }
 
@@ -39,13 +45,16 @@ export function CobroModal({
   onVentaCobrada,
 }: {
   total: number;
-  /** Cobra la venta (backend) y devuelve el folio real. */
-  registrarCobro: (datos: DatosCobro & { totalFinal: number; recibido: number }) => Promise<string>;
+  /** Cobra la venta (backend) y devuelve el folio real y los puntos acumulados. */
+  registrarCobro: (
+    datos: DatosCobro & { totalFinal: number; recibido: number },
+  ) => Promise<{ folio: string; puntosGanados: number }>;
   onCerrar: () => void;
   onCompletar: () => void;
   onVentaCobrada: (venta: Venta) => void;
 }) {
-  const { clientes, recompensas, configLealtad } = useOperacion();
+  const { data: clientes = [] } = useClientes();
+  const { data: recompensas = [] } = useRecompensas();
 
   const [metodo, setMetodo] = useState<MetodoPago>('efectivo');
   const [recibido, setRecibido] = useState('');
@@ -57,14 +66,15 @@ export function CobroModal({
 
   const cliente = clientes.find((c) => c.id === clienteId);
   const recompensasCanjeables = useMemo(
-    () => (cliente ? recompensas.filter((r) => r.activa && cliente.puntos >= r.costoPuntos) : []),
+    // Producto-gratis aún no se aplica end-to-end: solo recompensas de descuento por ahora.
+    () => (cliente ? recompensas.filter((r) => r.tipo !== 'producto' && cliente.puntos >= r.costoPuntos) : []),
     [cliente, recompensas],
   );
   const recompensa = recompensaId ? recompensas.find((r) => r.id === recompensaId) : undefined;
 
   const descuento = recompensa ? descuentoDeRecompensa(recompensa, total) : 0;
   const totalFinal = Math.max(0, total - descuento);
-  const puntosGanados = cliente ? Math.floor(totalFinal / configLealtad.quetzalesPorPunto) : 0;
+  const puntosGanados = cliente ? Math.floor(totalFinal / QUETZALES_POR_PUNTO) : 0;
 
   const recibidoNum = parseFloat(recibido) || 0;
   const cambio = recibidoNum - totalFinal;
@@ -80,7 +90,7 @@ export function CobroModal({
     setCobrando(true);
     try {
       const recibidoFinal = metodo === 'efectivo' ? recibidoNum : totalFinal;
-      const folio = await registrarCobro({
+      const res = await registrarCobro({
         metodo,
         clienteId: clienteId || undefined,
         recompensaId: recompensaId || undefined,
@@ -88,12 +98,12 @@ export function CobroModal({
         recibido: recibidoFinal,
       });
       const nueva: Venta = {
-        folio,
+        folio: res.folio,
         metodo,
         total: totalFinal,
         recibido: recibidoFinal,
         cambio: metodo === 'efectivo' ? cambio : 0,
-        puntosGanados,
+        puntosGanados: res.puntosGanados,
       };
       setVenta(nueva);
       onVentaCobrada(nueva);

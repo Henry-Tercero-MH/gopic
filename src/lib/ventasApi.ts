@@ -36,6 +36,7 @@ export async function cobrarVenta(args: {
   /** Descuento total en Q (manual + promo + recompensa), ya calculado en la UI. */
   descuento: number;
   clienteId?: string;
+  recompensaId?: string;
 }): Promise<VentaResultado> {
   await asegurarCaja();
   const forma = await formaPagoId(args.metodo);
@@ -49,5 +50,6 @@ export async function cobrarVenta(args: {
     pagos: [{ forma_pago_id: forma, monto: totalFinal, recibido: args.recibido }],
     descuento: args.descuento,
     clienteId: args.clienteId,
+    recompensaId: args.recompensaId,
   });
 }

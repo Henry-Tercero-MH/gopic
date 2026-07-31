@@ -10,6 +10,7 @@ import {
   Repeat,
   X,
   ArrowRight,
+  Loader2,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -20,66 +21,56 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { useOperacion } from '@/lib/operacion';
-import { kardexEjemplo, type Insumo, type NivelStock, type TipoInsumo } from '@/mock/data';
+import { useInsumos, useKardex, useReproceso } from '@/lib/inventario';
+import { type InsumoApi } from '@/lib/api';
 
-const nivelBadge: Record<NivelStock, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
+type Nivel = InsumoApi['nivel'];
+type Tipo = InsumoApi['tipo'];
+
+const nivelBadge: Record<Nivel, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
   ok: { label: 'En nivel', tone: 'success' },
   bajo: { label: 'Bajo', tone: 'warning' },
   critico: { label: 'Crítico', tone: 'danger' },
 };
 
-const tipoInfo: Record<TipoInsumo, { label: string; tone: 'neutral' | 'info' | 'success' }> = {
+const tipoInfo: Record<Tipo, { label: string; tone: 'neutral' | 'info' | 'success' }> = {
   materia_prima: { label: 'Materia prima', tone: 'neutral' },
   elaborado: { label: 'Elaborado', tone: 'info' },
   terminado: { label: 'Terminado', tone: 'success' },
 };
 
-const tipoDe = (i: Insumo): TipoInsumo => i.tipo ?? 'materia_prima';
-
-/** Deriva el nivel de stock a partir de la existencia y el mínimo. */
-function nivelDe(existencia: number, minimo: number): NivelStock {
-  if (existencia <= minimo * 0.5) return 'critico';
-  if (existencia <= minimo) return 'bajo';
-  return 'ok';
-}
-
 export function InventarioPage() {
-  const { insumos, setInsumos } = useOperacion();
+  const { data: insumos = [], isLoading } = useInsumos();
+  const repro = useReproceso();
   const toast = useToast();
   const [q, setQ] = useState('');
-  const [seleccionado, setSeleccionado] = useState(insumos[0]?.id ?? '');
+  const [seleccionado, setSeleccionado] = useState('');
   const [reprocesoAbierto, setReprocesoAbierto] = useState(false);
 
-  /** Reproceso: descuenta del origen y suma al destino, recalculando niveles. */
-  function reprocesar(origenId: string, consumo: number, destinoId: string, produccion: number) {
-    setInsumos(
-      insumos.map((i) => {
-        if (i.id === origenId) {
-          const existencia = Math.max(0, i.existencia - consumo);
-          return { ...i, existencia, nivel: nivelDe(existencia, i.minimo) };
-        }
-        if (i.id === destinoId) {
-          const existencia = i.existencia + produccion;
-          return { ...i, existencia, nivel: nivelDe(existencia, i.minimo) };
-        }
-        return i;
-      }),
-    );
-    const origen = insumos.find((i) => i.id === origenId);
-    const destino = insumos.find((i) => i.id === destinoId);
-    setReprocesoAbierto(false);
-    toast.exito(`Reproceso: −${consumo} ${origen?.unidad} → +${produccion} ${destino?.unidad} de ${destino?.nombre}.`);
+  const sel = seleccionado || insumos[0]?.id || '';
+  const { data: kardex = [] } = useKardex(sel || null);
+
+  async function reprocesar(origenId: string, consumo: number, destinoId: string, produccion: number) {
+    try {
+      await repro.mutateAsync({ origenId, consumo, destinoId, produccion });
+      const origen = insumos.find((i) => i.id === origenId);
+      const destino = insumos.find((i) => i.id === destinoId);
+      toast.exito(`Reproceso: −${consumo} ${origen?.unidad} → +${produccion} ${destino?.unidad} de ${destino?.nombre}.`);
+      setReprocesoAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo reprocesar.');
+    }
   }
 
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return insumos.filter((i) => !t || i.nombre.toLowerCase().includes(t) || i.categoria.toLowerCase().includes(t));
+    return insumos.filter((i) => !t || i.nombre.toLowerCase().includes(t) || (i.categoria ?? '').toLowerCase().includes(t));
   }, [insumos, q]);
 
   const valorTotal = insumos.reduce((s, i) => s + i.existencia * i.costoUnitario, 0);
   const criticos = insumos.filter((i) => i.nivel === 'critico').length;
   const bajos = insumos.filter((i) => i.nivel === 'bajo').length;
+  const nombreSel = insumos.find((i) => i.id === sel)?.nombre ?? '—';
 
   return (
     <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -88,7 +79,7 @@ export function InventarioPage() {
         subtitle={`${insumos.length} insumos registrados`}
         actions={
           <>
-            <Button variant="secondary" onClick={() => setReprocesoAbierto(true)}>
+            <Button variant="secondary" onClick={() => setReprocesoAbierto(true)} disabled={insumos.length < 2}>
               <Repeat size={18} /> Reproceso
             </Button>
             <Button variant="secondary">
@@ -122,81 +113,91 @@ export function InventarioPage() {
               />
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-text-muted">
-                  <th className="p-3 font-medium">Insumo</th>
-                  <th className="p-3 text-right font-medium">Existencia</th>
-                  <th className="p-3 text-right font-medium">Mínimo</th>
-                  <th className="p-3 text-right font-medium">Costo unit.</th>
-                  <th className="p-3 text-center font-medium">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtrados.map((i) => (
-                  <tr
-                    key={i.id}
-                    onClick={() => setSeleccionado(i.id)}
-                    className={cn(
-                      'cursor-pointer border-b border-border/60 last:border-0 hover:bg-surface-alt',
-                      seleccionado === i.id && 'bg-action-50',
-                    )}
-                  >
-                    <td className="p-3">
-                      <div className="font-medium text-text">{i.nombre}</div>
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        <Badge tone={tipoInfo[tipoDe(i)].tone}>{tipoInfo[tipoDe(i)].label}</Badge>
-                        <span className="text-xs text-text-muted">{i.categoria}</span>
-                      </div>
-                    </td>
-                    <td className="num p-3 text-right font-semibold text-text">
-                      {i.existencia} {i.unidad}
-                    </td>
-                    <td className="num p-3 text-right text-text-muted">
-                      {i.minimo} {i.unidad}
-                    </td>
-                    <td className="num p-3 text-right text-text-muted">{formatCurrency(i.costoUnitario)}</td>
-                    <td className="p-3 text-center">
-                      <Badge tone={nivelBadge[i.nivel].tone}>{nivelBadge[i.nivel].label}</Badge>
-                    </td>
+          {isLoading ? (
+            <div className="grid place-items-center p-10 text-text-muted">
+              <Loader2 size={24} className="animate-spin motion-reduce:animate-none" aria-label="Cargando" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-text-muted">
+                    <th className="p-3 font-medium">Insumo</th>
+                    <th className="p-3 text-right font-medium">Existencia</th>
+                    <th className="p-3 text-right font-medium">Mínimo</th>
+                    <th className="p-3 text-right font-medium">Costo unit.</th>
+                    <th className="p-3 text-center font-medium">Estado</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filtrados.map((i) => (
+                    <tr
+                      key={i.id}
+                      onClick={() => setSeleccionado(i.id)}
+                      className={cn(
+                        'cursor-pointer border-b border-border/60 last:border-0 hover:bg-surface-alt',
+                        sel === i.id && 'bg-action-50',
+                      )}
+                    >
+                      <td className="p-3">
+                        <div className="font-medium text-text">{i.nombre}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <Badge tone={tipoInfo[i.tipo].tone}>{tipoInfo[i.tipo].label}</Badge>
+                          <span className="text-xs text-text-muted">{i.categoria}</span>
+                        </div>
+                      </td>
+                      <td className="num p-3 text-right font-semibold text-text">
+                        {i.existencia} {i.unidad}
+                      </td>
+                      <td className="num p-3 text-right text-text-muted">
+                        {i.minimo} {i.unidad}
+                      </td>
+                      <td className="num p-3 text-right text-text-muted">{formatCurrency(i.costoUnitario)}</td>
+                      <td className="p-3 text-center">
+                        <Badge tone={nivelBadge[i.nivel].tone}>{nivelBadge[i.nivel].label}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         {/* Kardex del insumo seleccionado */}
         <Card className="p-4">
           <h2 className="font-display text-lg font-semibold text-text">Kardex</h2>
-          <p className="text-xs text-text-muted">
-            {insumos.find((i) => i.id === seleccionado)?.nombre ?? '—'} · movimientos recientes
-          </p>
-          <ul className="mt-3 space-y-2">
-            {kardexEjemplo.map((m, idx) => (
-              <li key={idx} className="flex items-center justify-between rounded-md bg-surface-alt px-3 py-2">
-                <div>
-                  <div className="text-sm font-medium text-text">{m.tipo}</div>
-                  <div className="num text-xs text-text-muted">
-                    {m.fecha} · {m.documento}
+          <p className="text-xs text-text-muted">{nombreSel} · movimientos recientes</p>
+          {kardex.length === 0 ? (
+            <p className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-sm text-text-muted">
+              Sin movimientos registrados.
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {kardex.map((m, idx) => (
+                <li key={idx} className="flex items-center justify-between rounded-md bg-surface-alt px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium text-text">{m.tipo}</div>
+                    <div className="num text-xs text-text-muted">
+                      {m.fecha} · {m.documento}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className={cn('num text-sm font-semibold', m.cantidad >= 0 ? 'text-success' : 'text-danger')}>
-                    {m.cantidad >= 0 ? '+' : ''}
-                    {m.cantidad}
+                  <div className="text-right">
+                    <div className={cn('num text-sm font-semibold', m.cantidad >= 0 ? 'text-success' : 'text-danger')}>
+                      {m.cantidad >= 0 ? '+' : ''}
+                      {m.cantidad}
+                    </div>
+                    <div className="num text-xs text-text-muted">saldo {m.saldo}</div>
                   </div>
-                  <div className="num text-xs text-text-muted">saldo {m.saldo}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
       {reprocesoAbierto && (
-        <ReprocesoModal insumos={insumos} onCerrar={() => setReprocesoAbierto(false)} onReprocesar={reprocesar} />
+        <ReprocesoModal insumos={insumos} enviando={repro.isPending} onCerrar={() => setReprocesoAbierto(false)} onReprocesar={reprocesar} />
       )}
     </div>
   );
@@ -204,19 +205,20 @@ export function InventarioPage() {
 
 function ReprocesoModal({
   insumos,
+  enviando,
   onCerrar,
   onReprocesar,
 }: {
-  insumos: Insumo[];
+  insumos: InsumoApi[];
+  enviando: boolean;
   onCerrar: () => void;
   onReprocesar: (origenId: string, consumo: number, destinoId: string, produccion: number) => void;
 }) {
-  // Origen sugerido: materia prima; destino: un elaborado/terminado distinto.
-  const origenes = insumos.filter((i) => tipoDe(i) === 'materia_prima');
-  const destinos = insumos.filter((i) => tipoDe(i) !== 'materia_prima');
+  const destinos = insumos.filter((i) => i.tipo !== 'materia_prima');
+  const origenes = insumos.filter((i) => i.tipo === 'materia_prima');
 
   const [origenId, setOrigenId] = useState(origenes[0]?.id ?? insumos[0]?.id ?? '');
-  const [destinoId, setDestinoId] = useState(destinos[0]?.id ?? '');
+  const [destinoId, setDestinoId] = useState(destinos[0]?.id ?? insumos.find((i) => i.id !== origenId)?.id ?? '');
   const [consumoStr, setConsumoStr] = useState('');
   const [produccionStr, setProduccionStr] = useState('');
 
@@ -253,7 +255,6 @@ function ReprocesoModal({
       </header>
 
       <div className="space-y-4 p-4">
-        {/* Origen */}
         <div>
           <label htmlFor="rp-origen" className="text-sm font-medium text-text">Sale del inventario</label>
           <select id="rp-origen" value={origenId} onChange={(e) => setOrigenId(e.target.value)} className={selectCls}>
@@ -285,13 +286,12 @@ function ReprocesoModal({
           </span>
         </div>
 
-        {/* Destino */}
         <div>
           <label htmlFor="rp-destino" className="text-sm font-medium text-text">Entra al inventario</label>
           <select id="rp-destino" value={destinoId} onChange={(e) => setDestinoId(e.target.value)} className={selectCls}>
-            {destinos.map((i) => (
+            {insumos.filter((i) => i.id !== origenId).map((i) => (
               <option key={i.id} value={i.id}>
-                {i.nombre} · {tipoInfo[tipoDe(i)].label}
+                {i.nombre} · {tipoInfo[i.tipo].label}
               </option>
             ))}
           </select>
@@ -310,7 +310,7 @@ function ReprocesoModal({
 
       <footer className="grid grid-cols-2 gap-2 border-t border-border p-4">
         <Button variant="secondary" size="lg" onClick={onCerrar}>Cancelar</Button>
-        <Button size="lg" disabled={!valido} onClick={() => onReprocesar(origenId, consumo, destinoId, produccion)}>
+        <Button size="lg" disabled={!valido || enviando} loading={enviando} onClick={() => onReprocesar(origenId, consumo, destinoId, produccion)}>
           <Repeat size={18} /> Reprocesar
         </Button>
       </footer>

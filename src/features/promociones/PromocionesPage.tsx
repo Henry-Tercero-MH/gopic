@@ -22,7 +22,11 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { promocionesSeed, type Promocion, type TipoPromo } from '@/mock/data';
+import { usePromociones, usePromocionMutations } from '@/lib/promociones';
+import { type PromocionApi, type PromocionInput } from '@/lib/api';
+
+type TipoPromo = PromocionApi['tipo'];
+type Promocion = PromocionApi;
 
 const tipoConfig: Record<TipoPromo, { label: string; icon: LucideIcon; tone: 'brand' | 'action' | 'accent' | 'info' }> = {
   porcentaje: { label: 'Descuento %', icon: Percent, tone: 'action' },
@@ -42,7 +46,8 @@ function beneficio(p: Promocion): string {
 }
 
 export function PromocionesPage() {
-  const [promos, setPromos] = useState<Promocion[]>(promocionesSeed);
+  const { data: promos = [] } = usePromociones();
+  const { crear, editar, eliminar: eliminarMut } = usePromocionMutations();
   const [busqueda, setBusqueda] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
   const [editando, setEditando] = useState<Promocion | null>(null);
@@ -57,16 +62,28 @@ export function PromocionesPage() {
 
   const activas = promos.filter((p) => p.activa).length;
 
-  function toggle(p: Promocion) {
-    setPromos((prev) => prev.map((x) => (x.id === p.id ? { ...x, activa: !x.activa } : x)));
-    toast.info(`"${p.nombre}" ${p.activa ? 'desactivada' : 'activada'}.`);
+  async function toggle(p: Promocion) {
+    try {
+      await editar.mutateAsync({ id: p.id, data: { activa: !p.activa } });
+      toast.info(`"${p.nombre}" ${p.activa ? 'desactivada' : 'activada'}.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo actualizar.');
+    }
   }
 
-  function guardar(promo: Promocion) {
-    const esNueva = !promos.some((x) => x.id === promo.id);
-    setPromos((prev) => (esNueva ? [...prev, promo] : prev.map((x) => (x.id === promo.id ? promo : x))));
-    setModalAbierto(false);
-    toast.exito(esNueva ? `Promoción "${promo.nombre}" creada.` : `Promoción "${promo.nombre}" actualizada.`);
+  async function guardar(input: PromocionInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Promoción "${input.nombre}" actualizada.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Promoción "${input.nombre}" creada.`);
+      }
+      setModalAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar la promoción.');
+    }
   }
 
   async function eliminar(p: Promocion) {
@@ -77,8 +94,12 @@ export function PromocionesPage() {
       peligro: true,
     });
     if (!ok) return;
-    setPromos((prev) => prev.filter((x) => x.id !== p.id));
-    toast.info(`Promoción "${p.nombre}" eliminada.`);
+    try {
+      await eliminarMut.mutateAsync(p.id);
+      toast.info(`Promoción "${p.nombre}" eliminada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.');
+    }
   }
 
   return (
@@ -198,7 +219,7 @@ function PromoModal({
 }: {
   promo: Promocion | null;
   onCerrar: () => void;
-  onGuardar: (p: Promocion) => void;
+  onGuardar: (input: PromocionInput) => void;
 }) {
   const [nombre, setNombre] = useState(promo?.nombre ?? '');
   const [tipo, setTipo] = useState<TipoPromo>(promo?.tipo ?? 'porcentaje');
@@ -222,13 +243,11 @@ function PromoModal({
 
   function guardar() {
     onGuardar({
-      id: promo?.id ?? `promo-${Date.now()}`,
       nombre: nombre.trim(),
       tipo,
       valor: requiereValor ? valorNum : 0,
-      aplicaEn: aplicaEn.trim(),
+      aplicaEn: aplicaEn.trim() || undefined,
       vigencia: vigencia.trim() || 'Todos los días',
-      activa: promo?.activa ?? true,
     });
   }
 

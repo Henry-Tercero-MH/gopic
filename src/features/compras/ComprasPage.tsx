@@ -23,7 +23,12 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { ordenesSeed, proveedoresSeed, type OrdenCompra, type EstadoOrden } from '@/mock/data';
+import { useOrdenesCompra, useCompraMutations } from '@/lib/compras';
+import { useProveedores } from '@/lib/proveedores';
+import { useInsumos } from '@/lib/inventario';
+import { type OrdenCompraApi, type OrdenCompraInput } from '@/lib/api';
+
+type EstadoOrden = OrdenCompraApi['estado'];
 
 const estadoConfig: Record<EstadoOrden, { label: string; tone: 'neutral' | 'info' | 'success' | 'danger' }> = {
   borrador: { label: 'Borrador', tone: 'neutral' },
@@ -32,12 +37,13 @@ const estadoConfig: Record<EstadoOrden, { label: string; tone: 'neutral' | 'info
   cancelada: { label: 'Cancelada', tone: 'danger' },
 };
 
-const totalOrden = (o: OrdenCompra) => o.items.reduce((s, i) => s + i.cantidad * i.costoUnitario, 0);
+const totalOrden = (o: OrdenCompraApi) => o.items.reduce((s, i) => s + i.cantidad * i.costoUnitario, 0);
 
 export function ComprasPage() {
-  const [ordenes, setOrdenes] = useState<OrdenCompra[]>(ordenesSeed);
+  const { data: ordenes = [] } = useOrdenesCompra();
+  const { crear: crearMut, recibir: recibirMut, eliminar: eliminarMut } = useCompraMutations();
   const [busqueda, setBusqueda] = useState('');
-  const [detalle, setDetalle] = useState<OrdenCompra | null>(null);
+  const [detalle, setDetalle] = useState<OrdenCompraApi | null>(null);
   const [modalAbierto, setModalAbierto] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
@@ -54,19 +60,27 @@ export function ComprasPage() {
     .reduce((s, o) => s + totalOrden(o), 0);
   const recibidasMes = ordenes.filter((o) => o.estado === 'recibida').length;
 
-  function recibir(o: OrdenCompra) {
-    setOrdenes((prev) => prev.map((x) => (x.id === o.id ? { ...x, estado: 'recibida' } : x)));
-    setDetalle((d) => (d?.id === o.id ? { ...d, estado: 'recibida' } : d));
-    toast.exito(`Orden ${o.folio} recibida. Inventario actualizado.`);
+  async function recibir(o: OrdenCompraApi) {
+    try {
+      await recibirMut.mutateAsync(o.id);
+      setDetalle((d) => (d?.id === o.id ? { ...d, estado: 'recibida' } : d));
+      toast.exito(`Orden ${o.folio} recibida. Inventario actualizado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo recibir la orden.');
+    }
   }
 
-  function crear(nueva: OrdenCompra) {
-    setOrdenes((prev) => [nueva, ...prev]);
-    setModalAbierto(false);
-    toast.exito(`Orden ${nueva.folio} creada.`);
+  async function crear(input: OrdenCompraInput) {
+    try {
+      const { folio } = await crearMut.mutateAsync(input);
+      setModalAbierto(false);
+      toast.exito(`Orden ${folio} creada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo crear la orden.');
+    }
   }
 
-  async function eliminar(o: OrdenCompra) {
+  async function eliminar(o: OrdenCompraApi) {
     const ok = await confirm({
       titulo: 'Eliminar orden',
       mensaje: `¿Eliminar la orden ${o.folio}? Esta acción no se puede deshacer.`,
@@ -74,9 +88,13 @@ export function ComprasPage() {
       peligro: true,
     });
     if (!ok) return;
-    setOrdenes((prev) => prev.filter((x) => x.id !== o.id));
-    setDetalle((d) => (d?.id === o.id ? null : d));
-    toast.info(`Orden ${o.folio} eliminada.`);
+    try {
+      await eliminarMut.mutateAsync(o.id);
+      setDetalle((d) => (d?.id === o.id ? null : d));
+      toast.info(`Orden ${o.folio} eliminada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar la orden.');
+    }
   }
 
   return (
@@ -170,7 +188,7 @@ export function ComprasPage() {
       </Card>
 
       <DetalleDrawer orden={detalle} onClose={() => setDetalle(null)} onRecibir={recibir} />
-      {modalAbierto && <OrdenModal onCerrar={() => setModalAbierto(false)} onCrear={crear} totalOrdenes={ordenes.length} />}
+      {modalAbierto && <OrdenModal onCerrar={() => setModalAbierto(false)} onCrear={crear} />}
     </div>
   );
 }
@@ -211,9 +229,9 @@ function DetalleDrawer({
   onClose,
   onRecibir,
 }: {
-  orden: OrdenCompra | null;
+  orden: OrdenCompraApi | null;
   onClose: () => void;
-  onRecibir: (o: OrdenCompra) => void;
+  onRecibir: (o: OrdenCompraApi) => void;
 }) {
   return (
     <Drawer open={orden !== null} onClose={onClose} ariaLabel="Detalle de la orden">
@@ -278,34 +296,29 @@ function DetalleDrawer({
 function OrdenModal({
   onCerrar,
   onCrear,
-  totalOrdenes,
 }: {
   onCerrar: () => void;
-  onCrear: (o: OrdenCompra) => void;
-  totalOrdenes: number;
+  onCrear: (input: OrdenCompraInput) => void;
 }) {
-  const [proveedor, setProveedor] = useState(proveedoresSeed[0]);
-  const [insumo, setInsumo] = useState('');
+  const { data: proveedores = [] } = useProveedores();
+  const { data: insumos = [] } = useInsumos();
+  const [proveedorId, setProveedorId] = useState('');
+  const [insumoId, setInsumoId] = useState('');
   const [cantidad, setCantidad] = useState('');
   const [costo, setCosto] = useState('');
 
   const cantidadNum = parseFloat(cantidad) || 0;
   const costoNum = parseFloat(costo) || 0;
-  const valido = insumo.trim() !== '' && cantidadNum > 0 && costoNum > 0;
+  const provId = proveedorId || proveedores[0]?.id || '';
+  const insId = insumoId || insumos[0]?.id || '';
+  const insumoSel = insumos.find((i) => i.id === insId);
+  const valido = provId !== '' && insId !== '' && cantidadNum > 0 && costoNum > 0;
 
   const inputCls =
     'mt-1 h-10 w-full rounded-md border border-border bg-surface-alt px-3 text-sm text-text focus:border-action-500 focus:outline-none';
 
   function guardar() {
-    const folio = `OC-${String(90 + totalOrdenes).padStart(4, '0')}`;
-    onCrear({
-      id: `oc-${Date.now()}`,
-      folio,
-      proveedor,
-      fecha: new Date().toLocaleDateString('es-GT'),
-      estado: 'borrador',
-      items: [{ insumo: insumo.trim(), cantidad: cantidadNum, unidad: 'u', costoUnitario: costoNum }],
-    });
+    onCrear({ proveedorId: provId, items: [{ insumoId: insId, cantidad: cantidadNum, costoUnitario: costoNum }] });
   }
 
   return (
@@ -324,21 +337,27 @@ function OrdenModal({
       <div className="space-y-4 p-4">
         <label className="block">
           <span className="text-sm font-medium text-text">Proveedor</span>
-          <select value={proveedor} onChange={(e) => setProveedor(e.target.value)} className={inputCls}>
-            {proveedoresSeed.map((p) => (
-              <option key={p} value={p}>{p}</option>
+          <select value={provId} onChange={(e) => setProveedorId(e.target.value)} className={inputCls}>
+            {proveedores.length === 0 && <option value="">Sin proveedores</option>}
+            {proveedores.map((p) => (
+              <option key={p.id} value={p.id}>{p.nombre}</option>
             ))}
           </select>
         </label>
 
         <label className="block">
           <span className="text-sm font-medium text-text">Insumo</span>
-          <input value={insumo} onChange={(e) => setInsumo(e.target.value)} placeholder="Carne, papa, pan…" autoFocus className={inputCls} />
+          <select value={insId} onChange={(e) => setInsumoId(e.target.value)} className={inputCls}>
+            {insumos.length === 0 && <option value="">Sin insumos</option>}
+            {insumos.map((i) => (
+              <option key={i.id} value={i.id}>{i.nombre} ({i.unidad})</option>
+            ))}
+          </select>
         </label>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-sm font-medium text-text">Cantidad</span>
+            <span className="text-sm font-medium text-text">Cantidad {insumoSel ? `(${insumoSel.unidad})` : ''}</span>
             <input type="number" min={0} value={cantidad} onChange={(e) => setCantidad(e.target.value)} className={cn(inputCls, 'num')} />
           </label>
           <label className="block">
@@ -348,7 +367,7 @@ function OrdenModal({
         </div>
 
         <p className="text-xs text-text-muted">
-          La orden se crea como borrador. Podrás agregar más insumos y marcarla como recibida cuando llegue.
+          La orden se crea como borrador. Al marcarla como recibida, la mercadería ingresa al inventario.
         </p>
       </div>
 
