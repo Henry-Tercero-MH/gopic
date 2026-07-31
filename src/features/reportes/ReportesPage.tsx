@@ -5,60 +5,34 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { formatCurrency } from '@/lib/format';
 import { useToast } from '@/lib/toast';
-import { useOperacion } from '@/lib/operacion';
+import { useReportes } from '@/lib/reportes';
 import { exportarCSV } from '@/lib/exportar';
 import { cn } from '@/lib/cn';
-import {
-  ventasPorDia,
-  ventasPorCategoria,
-  rentabilidadProductos,
-  gastosSeed,
-  ventasPorEmpleadoSeed,
-} from '@/mock/data';
 
 const barColors = ['bg-brand-500', 'bg-action-500', 'bg-accent-400', 'bg-info', 'bg-brand-300'];
 
-/** Ingresos del mes (base coherente con el negocio para el estado de resultados). */
-const INGRESOS_MES = 128_400;
-
 export function ReportesPage() {
   const toast = useToast();
-  const { lealtad, clientes, recompensas } = useOperacion();
-  const maxDia = Math.max(...ventasPorDia.map((v) => v.monto));
+  const { data, isLoading } = useReportes();
+
+  const ingresos = data?.ingresos ?? 0;
+  const gastosMes = data?.gastos ?? 0;
+  const ventasPorDia = data?.ventasPorDia ?? [];
+  const ventasPorCategoria = data?.ventasPorCategoria ?? [];
+  const rentabilidadProductos = data?.rentabilidadProductos ?? [];
+  const gastosPorCategoria = data?.gastosPorCategoria ?? [];
+  const topVendedores = data?.topVendedores ?? [];
+  const puntosOtorgados = data?.fidelizacion.puntosOtorgados ?? 0;
+  const puntosCanjeados = data?.fidelizacion.puntosCanjeados ?? 0;
+  const recompensasCanjeadas = data?.fidelizacion.recompensasCanjeadas ?? [];
+  const topClientes = data?.fidelizacion.topClientes ?? [];
+
+  const maxDia = ventasPorDia.reduce((m, v) => Math.max(m, v.monto), 0);
   const totalSemana = ventasPorDia.reduce((s, v) => s + v.monto, 0);
-
-  // --- Fidelización ---
-  const puntosOtorgados = lealtad.filter((m) => m.puntos > 0).reduce((s, m) => s + m.puntos, 0);
-  const puntosCanjeados = lealtad.filter((m) => m.puntos < 0).reduce((s, m) => s + Math.abs(m.puntos), 0);
-  // Recompensas más canjeadas: cuenta los movimientos de canje por nombre de recompensa.
-  const recompensasCanjeadas = recompensas
-    .map((r) => ({
-      nombre: r.nombre,
-      veces: lealtad.filter((m) => m.puntos < 0 && m.descripcion === `Canje: ${r.nombre}`).length,
-    }))
-    .filter((r) => r.veces > 0)
-    .sort((a, b) => b.veces - a.veces);
-  // Clientes frecuentes: por saldo de puntos.
-  const topClientes = [...clientes].filter((c) => c.puntos > 0).sort((a, b) => b.puntos - a.puntos).slice(0, 5);
-
-  // Rentabilidad del mes: ingresos − gastos (del módulo de Gastos) = utilidad.
-  const gastosMes = gastosSeed.reduce((s, g) => s + g.monto, 0);
-  const utilidad = INGRESOS_MES - gastosMes;
-  const margenNeto = ((utilidad / INGRESOS_MES) * 100).toFixed(1);
-
-  // Gastos agrupados por categoría (desglose para controlar la salida de dinero).
-  const gastosPorCategoria = Object.entries(
-    gastosSeed.reduce<Record<string, number>>((acc, g) => {
-      acc[g.categoria] = (acc[g.categoria] ?? 0) + g.monto;
-      return acc;
-    }, {}),
-  )
-    .map(([categoria, monto]) => ({ categoria, monto, pct: (monto / gastosMes) * 100 }))
-    .sort((a, b) => b.monto - a.monto);
-
-  // Personal que más vendió en el turno, ordenado.
-  const topVendedores = [...ventasPorEmpleadoSeed].sort((a, b) => b.monto - a.monto);
-  const maxVendedor = Math.max(...topVendedores.map((v) => v.monto));
+  const utilidad = ingresos - gastosMes;
+  const margenNeto = ingresos > 0 ? ((utilidad / ingresos) * 100).toFixed(1) : '0.0';
+  const maxVendedor = topVendedores.reduce((m, v) => Math.max(m, v.monto), 0);
+  const baseIngresos = ingresos || 1;
 
   function exportarExcel() {
     exportarCSV(
@@ -87,7 +61,7 @@ export function ReportesPage() {
     <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
       <PageHeader
         title="Reportes"
-        subtitle="Julio 2026"
+        subtitle={data?.periodo ?? (isLoading ? 'Cargando…' : '')}
         actions={
           <>
             <Button variant="secondary" onClick={exportarExcel}>
@@ -108,7 +82,7 @@ export function ReportesPage() {
             icon={TrendingUp}
             tono="success"
             label="Ingresos"
-            valor={formatCurrency(INGRESOS_MES)}
+            valor={formatCurrency(ingresos)}
             hint="ventas totales"
           />
           <ResultadoTile
@@ -116,7 +90,7 @@ export function ReportesPage() {
             tono="danger"
             label="Gastos"
             valor={formatCurrency(gastosMes)}
-            hint={`${gastosSeed.length} egresos`}
+            hint={`${gastosPorCategoria.length} categorías`}
           />
           <ResultadoTile
             icon={Scale}
@@ -131,15 +105,15 @@ export function ReportesPage() {
         {/* Barra visual ingresos vs gastos */}
         <div className="mt-4">
           <div className="flex h-3 overflow-hidden rounded-full bg-surface-sunk">
-            <div className="bg-success" style={{ width: `${(utilidad / INGRESOS_MES) * 100}%` }} title="Utilidad" />
-            <div className="bg-danger" style={{ width: `${(gastosMes / INGRESOS_MES) * 100}%` }} title="Gastos" />
+            <div className="bg-success" style={{ width: `${(Math.max(utilidad, 0) / baseIngresos) * 100}%` }} title="Utilidad" />
+            <div className="bg-danger" style={{ width: `${(gastosMes / baseIngresos) * 100}%` }} title="Gastos" />
           </div>
           <div className="mt-2 flex flex-wrap gap-4 text-xs text-text-muted">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-success" /> Utilidad {margenNeto}%
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-danger" /> Gastos {((gastosMes / INGRESOS_MES) * 100).toFixed(1)}%
+              <span className="h-2.5 w-2.5 rounded-full bg-danger" /> Gastos {((gastosMes / baseIngresos) * 100).toFixed(1)}%
             </span>
           </div>
         </div>
@@ -195,7 +169,7 @@ export function ReportesPage() {
           </div>
           <ul className="mt-4 space-y-3">
             {topVendedores.map((v, i) => (
-              <li key={v.empleadoId} className="flex items-center gap-3">
+              <li key={v.nombre} className="flex items-center gap-3">
                 <span className="num w-4 shrink-0 text-center text-sm font-semibold text-text-muted">{i + 1}</span>
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
                   {v.iniciales}
@@ -332,7 +306,7 @@ export function ReportesPage() {
             ) : (
               <ul className="mt-2 space-y-2">
                 {topClientes.map((c, i) => (
-                  <li key={c.id} className="flex items-center gap-3">
+                  <li key={c.nombre + i} className="flex items-center gap-3">
                     <span className="num w-4 shrink-0 text-center text-sm font-semibold text-text-muted">{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{c.nombre}</span>
                     <span className="num inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent-600">

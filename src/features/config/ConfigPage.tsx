@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
   Store,
   Printer,
@@ -284,6 +284,7 @@ function UsuarioModal({
 }) {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [password, setPassword] = useState('');
   const [rolId, setRolId] = useState(roles[0]?.id ?? '');
   const valido = nombre.trim() !== '' && /.+@.+\..+/.test(email) && password.length >= 6 && rolId !== '';
@@ -303,6 +304,11 @@ function UsuarioModal({
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@gopic.gt" className={inputCls} />
         </label>
         <label className="block">
+          <span className="text-sm font-medium text-text">Teléfono (WhatsApp)</span>
+          <input type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="+502 5555 1234" className={inputCls} />
+          <span className="mt-1 block text-xs text-text-muted">Para enviarle el enlace de recuperación por WhatsApp.</span>
+        </label>
+        <label className="block">
           <span className="text-sm font-medium text-text">Contraseña temporal</span>
           <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres" className={cn(inputCls, 'num')} />
           <span className="mt-1 block text-xs text-text-muted">El usuario podrá cambiarla luego desde recuperación.</span>
@@ -318,7 +324,7 @@ function UsuarioModal({
       </div>
       <footer className="flex justify-end gap-2 border-t border-border p-4">
         <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
-        <Button disabled={!valido} onClick={() => onCrear({ nombre: nombre.trim(), email: email.trim(), password, rolId })}>
+        <Button disabled={!valido} onClick={() => onCrear({ nombre: nombre.trim(), email: email.trim(), telefono: telefono.trim() || undefined, password, rolId })}>
           <Check size={18} /> Crear usuario
         </Button>
       </footer>

@@ -7,6 +7,7 @@ export const RUTAS = {
   login: '/login',
   registro: '/registro',
   recuperar: '/recuperar',
+  restablecer: '/restablecer',
   carta: '/carta',
   // Privadas (bajo AppShell)
   dashboard: '/',

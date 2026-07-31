@@ -37,6 +37,8 @@ export async function cobrarVenta(args: {
   descuento: number;
   clienteId?: string;
   recompensaId?: string;
+  /** Cuenta a cobrar (servicio en mesa): al pagar se cierra y libera la mesa. */
+  cuentaId?: string;
 }): Promise<VentaResultado> {
   await asegurarCaja();
   const forma = await formaPagoId(args.metodo);
@@ -51,5 +53,6 @@ export async function cobrarVenta(args: {
     descuento: args.descuento,
     clienteId: args.clienteId,
     recompensaId: args.recompensaId,
+    cuentaId: args.cuentaId,
   });
 }

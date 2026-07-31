@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { estacionDe, type LineaTicket } from '@/lib/operacion';
-import { type Producto, type Promocion } from '@/mock/data';
+import { type Producto } from '@/lib/tipos';
+import { type PromocionApi as Promocion } from '@/lib/api';
 
 export interface Linea {
   /** Id único de línea: dos veces el mismo producto con distintos modificadores son líneas distintas. */

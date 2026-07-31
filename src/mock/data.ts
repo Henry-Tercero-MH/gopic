@@ -4,28 +4,9 @@
  * Query contra la API real; las pantallas no deberían necesitar cambios grandes.
  */
 
-export interface Categoria {
-  id: string;
-  nombre: string;
-  emoji: string;
-  /** Nombre del icono lucide (p. ej. 'Beef'); lo persiste el backend en `icono`. */
-  icono?: string;
-}
-
-export interface Producto {
-  id: string;
-  categoriaId: string;
-  nombre: string;
-  precio: number;
-  emoji: string;
-  /** Estación que prepara el producto; enruta la comanda al KDS correcto. */
-  estacion?: 'Barra' | 'Cocina';
-  /** Foto del producto. Placeholder de Unsplash mientras no haya fotos reales. */
-  imagen?: string;
-  destacado?: boolean;
-  /** Ids de grupos de modificadores aplicables (ver `gruposModificadores`). */
-  modificadores?: string[];
-}
+// Los tipos de dominio viven en `@/lib/tipos`; se importan para el seed y se re-exportan.
+import type { Categoria, Producto, NivelStock } from '@/lib/tipos';
+export type { Categoria, Producto, NivelStock };
 
 /* ---- Modificadores de producto ---- */
 export interface OpcionModificador {
@@ -358,7 +339,6 @@ export const ventasPorHora = [
 ];
 
 /* ---- Inventario ---- */
-export type NivelStock = 'ok' | 'bajo' | 'critico';
 
 /** Etapa del insumo en la cadena de producción. */
 export type TipoInsumo = 'materia_prima' | 'elaborado' | 'terminado';

@@ -11,6 +11,7 @@ import { useOperacion } from '@/lib/operacion';
 import { useCatalogoMutations } from '@/lib/catalogo';
 import { useProveedores, useProveedorMutations } from '@/lib/proveedores';
 import { useInsumos, useInsumoMutations } from '@/lib/inventario';
+import { useUnidades, useUnidadMutations } from '@/lib/unidades';
 import { ICONOS_DISPONIBLES, componenteIcono } from '@/lib/iconosCategoria';
 import {
   type ProductoInput,
@@ -19,6 +20,8 @@ import {
   type ProveedorInput,
   type InsumoApi,
   type InsumoInput,
+  type UnidadApi,
+  type UnidadInput,
 } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
@@ -26,30 +29,12 @@ import {
   type Producto,
   type Categoria,
   type NivelStock,
-} from '@/mock/data';
+} from '@/lib/tipos';
 
-type TipoMedida = 'Peso' | 'Volumen' | 'Unidad';
-
-interface Medida {
-  id: string;
-  nombre: string;
-  abreviatura: string;
-  tipo: TipoMedida;
-}
-
-const MEDIDAS_SEED: Medida[] = [
-  { id: 'med-kg', nombre: 'Kilogramo', abreviatura: 'kg', tipo: 'Peso' },
-  { id: 'med-g', nombre: 'Gramo', abreviatura: 'g', tipo: 'Peso' },
-  { id: 'med-l', nombre: 'Litro', abreviatura: 'L', tipo: 'Volumen' },
-  { id: 'med-ml', nombre: 'Mililitro', abreviatura: 'ml', tipo: 'Volumen' },
-  { id: 'med-pz', nombre: 'Pieza', abreviatura: 'pz', tipo: 'Unidad' },
-  { id: 'med-bot', nombre: 'Botella', abreviatura: 'bot', tipo: 'Unidad' },
-  { id: 'med-caja', nombre: 'Caja', abreviatura: 'caja', tipo: 'Unidad' },
-];
+type TipoMedida = UnidadApi['tipo'];
+type Medida = UnidadApi;
 
 const TIPOS_MEDIDA: TipoMedida[] = ['Peso', 'Volumen', 'Unidad'];
-
-const uid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 /* ------------------------------------------------------------------ */
 /*  Página                                                            */
@@ -71,7 +56,7 @@ export function CatalogosPage() {
   // y proveedores también vienen del backend vía React Query. Medidas siguen locales.
   const { productos, categorias } = useOperacion();
   const { data: insumos = [] } = useInsumos();
-  const [medidas, setMedidas] = useState<Medida[]>(() => MEDIDAS_SEED.map((m) => ({ ...m })));
+  const { data: medidas = [] } = useUnidades();
 
   return (
     <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -96,7 +81,7 @@ export function CatalogosPage() {
 
       {pestana === 'productos' && <ProductosCat productos={productos} categorias={categorias} />}
       {pestana === 'categorias' && <CategoriasCat categorias={categorias} productos={productos} />}
-      {pestana === 'medidas' && <MedidasCat medidas={medidas} setMedidas={setMedidas} insumos={insumos} />}
+      {pestana === 'medidas' && <MedidasCat medidas={medidas} insumos={insumos} />}
       {pestana === 'insumos' && <InsumosCat insumos={insumos} medidas={medidas} />}
       {pestana === 'proveedores' && <ProveedoresCat />}
     </div>
@@ -364,20 +349,30 @@ const tipoMedidaTone: Record<TipoMedida, 'brand' | 'info' | 'accent'> = {
 
 function MedidasCat({
   medidas,
-  setMedidas,
   insumos,
 }: {
   medidas: Medida[];
-  setMedidas: React.Dispatch<React.SetStateAction<Medida[]>>;
   insumos: InsumoApi[];
 }) {
   const [editando, setEditando] = useState<Medida | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const toast = useToast();
+  const { crear, editar, eliminar } = useUnidadMutations();
   const enUso = (abrev: string) => insumos.filter((i) => i.unidad === abrev).length;
 
-  function guardar(m: Medida) {
-    setMedidas((prev) => (prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? m : x)) : [...prev, m]));
-    setAbierto(false);
+  async function guardar(input: UnidadInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Unidad "${input.nombre}" actualizada.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Unidad "${input.nombre}" creada.`);
+      }
+      setAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar la unidad.');
+    }
   }
 
   return (
@@ -393,7 +388,7 @@ function MedidasCat({
         entidad="unidad"
         describir={(m) => m.nombre}
         onEditar={(m) => { setEditando(m); setAbierto(true); }}
-        onEliminar={(m) => setMedidas((prev) => prev.filter((x) => x.id !== m.id))}
+        onEliminar={async (m) => { await eliminar.mutateAsync(m.id); }}
       />
 
       {abierto && <MedidaModal medida={editando} onCerrar={() => setAbierto(false)} onGuardar={guardar} />}
@@ -408,7 +403,7 @@ function MedidaModal({
 }: {
   medida: Medida | null;
   onCerrar: () => void;
-  onGuardar: (m: Medida) => void;
+  onGuardar: (input: UnidadInput) => void;
 }) {
   const [nombre, setNombre] = useState(medida?.nombre ?? '');
   const [abreviatura, setAbreviatura] = useState(medida?.abreviatura ?? '');
@@ -437,7 +432,7 @@ function MedidaModal({
       <PieModal
         onCerrar={onCerrar}
         valido={valido}
-        onGuardar={() => onGuardar({ id: medida?.id ?? uid('med'), nombre: nombre.trim(), abreviatura: abreviatura.trim(), tipo })}
+        onGuardar={() => onGuardar({ nombre: nombre.trim(), abreviatura: abreviatura.trim(), tipo })}
       />
     </ModalShell>
   );

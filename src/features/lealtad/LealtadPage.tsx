@@ -22,9 +22,14 @@ import { Modal } from '@/components/ui/Modal';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
-import { useOperacion, type Recompensa, type TipoRecompensa } from '@/lib/operacion';
+import { useOperacion } from '@/lib/operacion';
+import { useClientes } from '@/lib/clientes';
+import { useRecompensasAdmin, useRecompensaMutations, useConfigLealtad, useConfigLealtadMutation } from '@/lib/lealtad';
+import { type RecompensaApi, type RecompensaInput } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
+
+type TipoRecompensa = RecompensaApi['tipo'];
 
 const tipoConfig: Record<TipoRecompensa, { label: string; icon: LucideIcon; tone: 'brand' | 'action' | 'info' }> = {
   producto: { label: 'Producto gratis', icon: Package, tone: 'brand' },
@@ -33,40 +38,63 @@ const tipoConfig: Record<TipoRecompensa, { label: string; icon: LucideIcon; tone
 };
 
 export function LealtadPage() {
-  const { recompensas, setRecompensas, configLealtad, setConfigLealtad, clientes, productos } = useOperacion();
+  const { productos } = useOperacion();
+  const { data: clientes = [] } = useClientes();
+  const { data: recompensas = [] } = useRecompensasAdmin();
+  const { data: config } = useConfigLealtad();
+  const { crear, editar, eliminar: eliminarMut } = useRecompensaMutations();
+  const guardarConfig = useConfigLealtadMutation();
   const toast = useToast();
   const confirm = useConfirm();
 
-  const [tasa, setTasa] = useState(String(configLealtad.quetzalesPorPunto));
+  const tasaActual = config?.quetzalesPorPunto ?? 10;
+  const [tasa, setTasa] = useState('');
+  const tasaInput = tasa || String(tasaActual);
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [editando, setEditando] = useState<Recompensa | null>(null);
+  const [editando, setEditando] = useState<RecompensaApi | null>(null);
 
   const puntosEnCirculacion = clientes.reduce((s, c) => s + c.puntos, 0);
   const clientesConPuntos = clientes.filter((c) => c.puntos > 0).length;
 
-  function guardarTasa() {
-    const n = parseFloat(tasa);
+  async function guardarTasa() {
+    const n = parseFloat(tasaInput);
     if (!(n > 0)) {
       toast.error('La tasa debe ser mayor a 0.');
       return;
     }
-    setConfigLealtad({ quetzalesPorPunto: n });
-    toast.exito(`Tasa guardada: 1 punto por cada ${formatCurrency(n)}.`);
+    try {
+      await guardarConfig.mutateAsync(n);
+      toast.exito(`Tasa guardada: 1 punto por cada ${formatCurrency(n)}.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar la tasa.');
+    }
   }
 
-  function guardar(r: Recompensa) {
-    const esNueva = !recompensas.some((x) => x.id === r.id);
-    setRecompensas(esNueva ? [...recompensas, r] : recompensas.map((x) => (x.id === r.id ? r : x)));
-    setModalAbierto(false);
-    toast.exito(esNueva ? `Recompensa "${r.nombre}" creada.` : `Recompensa "${r.nombre}" actualizada.`);
+  async function guardar(input: RecompensaInput) {
+    try {
+      if (editando) {
+        await editar.mutateAsync({ id: editando.id, data: input });
+        toast.exito(`Recompensa "${input.nombre}" actualizada.`);
+      } else {
+        await crear.mutateAsync(input);
+        toast.exito(`Recompensa "${input.nombre}" creada.`);
+      }
+      setModalAbierto(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar la recompensa.');
+    }
   }
 
-  function toggle(r: Recompensa) {
-    setRecompensas(recompensas.map((x) => (x.id === r.id ? { ...x, activa: !x.activa } : x)));
-    toast.info(`"${r.nombre}" ${r.activa ? 'desactivada' : 'activada'}.`);
+  async function toggle(r: RecompensaApi) {
+    try {
+      await editar.mutateAsync({ id: r.id, data: { activa: !r.activa } });
+      toast.info(`"${r.nombre}" ${r.activa ? 'desactivada' : 'activada'}.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo actualizar.');
+    }
   }
 
-  async function eliminar(r: Recompensa) {
+  async function eliminar(r: RecompensaApi) {
     const ok = await confirm({
       titulo: 'Eliminar recompensa',
       mensaje: `¿Eliminar "${r.nombre}"? Los clientes ya no podrán canjearla.`,
@@ -74,8 +102,12 @@ export function LealtadPage() {
       peligro: true,
     });
     if (!ok) return;
-    setRecompensas(recompensas.filter((x) => x.id !== r.id));
-    toast.info(`Recompensa "${r.nombre}" eliminada.`);
+    try {
+      await eliminarMut.mutateAsync(r.id);
+      toast.info(`Recompensa "${r.nombre}" eliminada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.');
+    }
   }
 
   return (
@@ -94,7 +126,7 @@ export function LealtadPage() {
         <Kpi icon={Star} label="Puntos en circulación" valor={String(puntosEnCirculacion)} tono="accent" />
         <Kpi icon={Users} label="Clientes con puntos" valor={String(clientesConPuntos)} tono="brand" />
         <Kpi icon={Gift} label="Recompensas activas" valor={String(recompensas.filter((r) => r.activa).length)} tono="action" />
-        <Kpi icon={Settings2} label="Tasa actual" valor={`1 pt / ${formatCurrency(configLealtad.quetzalesPorPunto)}`} tono="info" chico />
+        <Kpi icon={Settings2} label="Tasa actual" valor={`1 pt / ${formatCurrency(tasaActual)}`} tono="info" chico />
       </div>
 
       {/* Configuración de la tasa */}
@@ -115,7 +147,7 @@ export function LealtadPage() {
                     type="number"
                     min={1}
                     step="1"
-                    value={tasa}
+                    value={tasaInput}
                     onChange={(e) => setTasa(e.target.value)}
                     className="num h-10 w-24 rounded-md border border-border bg-surface-alt px-3 text-right text-sm text-text focus:border-action-500 focus:outline-none"
                   />
@@ -127,7 +159,7 @@ export function LealtadPage() {
             </div>
             <p className="mt-2 text-xs text-text-muted">
               Ejemplo: con la tasa actual, una compra de {formatCurrency(85)} otorga{' '}
-              <span className="num font-semibold text-text">{Math.floor(85 / (parseFloat(tasa) || 1))} puntos</span>.
+              <span className="num font-semibold text-text">{Math.floor(85 / (parseFloat(tasaInput) || 1))} puntos</span>.
             </p>
           </div>
         </div>
@@ -253,9 +285,9 @@ function RecompensaModal({
   onCerrar,
   onGuardar,
 }: {
-  recompensa: Recompensa | null;
+  recompensa: RecompensaApi | null;
   onCerrar: () => void;
-  onGuardar: (r: Recompensa) => void;
+  onGuardar: (input: RecompensaInput) => void;
 }) {
   const { productos } = useOperacion();
   const [nombre, setNombre] = useState(recompensa?.nombre ?? '');
@@ -281,13 +313,11 @@ function RecompensaModal({
 
   function guardar() {
     onGuardar({
-      id: recompensa?.id ?? `rw-${Date.now()}`,
       nombre: nombre.trim(),
       tipo,
       costoPuntos: costoNum,
       productoId: requiereProducto ? productoId : undefined,
       valor: requiereValor ? valorNum : undefined,
-      activa: recompensa?.activa ?? true,
     });
   }
 

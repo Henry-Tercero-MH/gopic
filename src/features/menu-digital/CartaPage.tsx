@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Star, Sparkles, Settings2, Clock, LayoutGrid, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { iconoCategoria as iconoDe } from '@/lib/iconosCategoria';
-import { productos, categorias, promocionesSeed } from '@/mock/data';
+import { iconoCategoria as iconoDe, registrarIconosCategoria } from '@/lib/iconosCategoria';
+import { getCarta } from '@/lib/api';
 
 /**
  * Carta digital pública (solo lectura), pensada para abrirse por QR desde la mesa.
@@ -12,8 +13,17 @@ import { productos, categorias, promocionesSeed } from '@/mock/data';
  */
 export function CartaPage() {
   const [catActiva, setCatActiva] = useState<string>('all');
+  const { data, isLoading } = useQuery({ queryKey: ['carta'], queryFn: getCarta, staleTime: 60_000 });
 
-  const promosActivas = promocionesSeed.filter((p) => p.activa);
+  const categorias = data?.categorias ?? [];
+  const productos = data?.productos ?? [];
+  const promosActivas = data?.promociones ?? [];
+
+  // Registra los iconos (lucide) de las categorías traídas del backend.
+  useEffect(() => {
+    if (data?.categorias) registrarIconosCategoria(data.categorias);
+  }, [data]);
+
   const categoriasVisibles = catActiva === 'all' ? categorias : categorias.filter((c) => c.id === catActiva);
 
   // Productos agrupados por categoría visible.
@@ -23,7 +33,7 @@ export function CartaPage() {
         cat,
         items: productos.filter((p) => p.categoriaId === cat.id),
       })),
-    [categoriasVisibles],
+    [categoriasVisibles, productos],
   );
 
   return (
@@ -31,8 +41,8 @@ export function CartaPage() {
       {/* Encabezado de marca */}
       <header className="flex flex-col items-center gap-2 px-4 pb-5 pt-8 text-center">
         <img src="/img/logo.png" alt="GOPIC" className="h-20 w-20 rounded-full object-cover shadow-card" />
-        <h1 className="font-display text-2xl font-semibold text-brand-700 sm:text-3xl">GOPIC</h1>
-        <p className="text-sm text-text-muted">Preparaciones con sabor · Nuestra carta</p>
+        <h1 className="font-display text-2xl font-semibold text-brand-700 sm:text-3xl">{data?.negocio.nombre ?? 'GOPIC'}</h1>
+        <p className="text-sm text-text-muted">{isLoading ? 'Cargando carta…' : 'Nuestra carta'}</p>
       </header>
 
       {/* Filtro de categorías (sticky, ancho completo) */}
@@ -113,7 +123,7 @@ export function CartaPage() {
                           <Star size={10} /> Popular
                         </span>
                       )}
-                      {p.modificadores && p.modificadores.length > 0 && (
+                      {p.personalizable && (
                         <span className="inline-flex items-center gap-1 text-xs text-text-muted">
                           <Settings2 size={12} /> Personalizable
                         </span>

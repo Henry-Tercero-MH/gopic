@@ -18,26 +18,11 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useToast } from '@/lib/toast';
-import { useOperacion } from '@/lib/operacion';
+import { useCaja, useCajaMutations } from '@/lib/caja';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
 
 type TipoMov = 'Apertura' | 'Venta' | 'Ingreso' | 'Retiro';
-type Metodo = 'Efectivo' | 'Tarjeta';
-
-interface Movimiento {
-  id: string;
-  hora: string;
-  tipo: TipoMov;
-  concepto: string;
-  metodo?: Metodo;
-  monto: number;
-}
-
-// Movimientos manuales de ejemplo del turno (la apertura y las ventas vienen del store).
-const MOVS_MANUALES_SEED: Movimiento[] = [
-  { id: 'mv-5', hora: '10:50', tipo: 'Retiro', concepto: 'Compra de servilletas', monto: 40 },
-];
 
 const tipoTone: Record<TipoMov, 'brand' | 'success' | 'info' | 'warning'> = {
   Apertura: 'brand',
@@ -46,49 +31,35 @@ const tipoTone: Record<TipoMov, 'brand' | 'success' | 'info' | 'warning'> = {
   Retiro: 'warning',
 };
 
-const horaActual = () =>
-  new Date().toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
-
 export function CajaPage() {
-  const [movsManuales, setMovsManuales] = useState<Movimiento[]>(MOVS_MANUALES_SEED);
   const [modalMov, setModalMov] = useState(false);
   const [modalCorte, setModalCorte] = useState(false);
   const [modalApertura, setModalApertura] = useState(false);
   const toast = useToast();
-  const { ventas, cajaAbierta, fondoCaja, cajero, abrirCaja, cerrarCaja } = useOperacion();
+  const { data: caja } = useCaja();
+  const { abrir, movimiento, cerrar } = useCajaMutations();
 
-  // El fondo de apertura viene del store (definido al abrir la caja).
-  const aperturaMov: Movimiento = {
-    id: 'apertura', hora: '08:00', tipo: 'Apertura', concepto: 'Fondo de caja', monto: fondoCaja,
-  };
+  const cajaAbierta = caja?.abierta ?? false;
+  const fondo = caja?.sesion?.fondoApertura ?? 0;
+  const cajero = caja?.sesion?.cajero ?? '—';
+  const movs = caja?.movimientos ?? [];
 
-  // Las ventas cobradas en el POS entran a la caja como movimientos "Venta".
-  const ventasComoMov: Movimiento[] = ventas.map((v) => ({
-    id: v.id,
-    hora: v.hora,
-    tipo: 'Venta',
-    concepto: `Ticket ${v.folio}${v.tipoVenta === 'mesa' ? '' : v.tipoVenta === 'llevar' ? ' · Para llevar' : ' · Mostrador'}`,
-    metodo: v.metodo === 'efectivo' ? 'Efectivo' : 'Tarjeta',
-    monto: v.total,
-  }));
+  const r = caja?.resumen;
+  const ventasEfectivo = r?.ventasEfectivo ?? 0;
+  const ventasTarjeta = r?.ventasTarjeta ?? 0;
+  const ingresos = r?.ingresos ?? 0;
+  const retiros = r?.retiros ?? 0;
+  const totalVentas = r?.totalVentas ?? 0;
+  const efectivoEsperado = r?.efectivoEsperado ?? 0;
 
-  // Movimientos del turno: apertura + manuales + ventas del POS, ordenados por hora.
-  const movs = cajaAbierta
-    ? [aperturaMov, ...movsManuales, ...ventasComoMov].sort((a, b) => a.hora.localeCompare(b.hora))
-    : [];
-
-  const fondo = fondoCaja;
-  const ventasEfectivo = movs.filter((m) => m.tipo === 'Venta' && m.metodo === 'Efectivo').reduce((s, m) => s + m.monto, 0);
-  const ventasTarjeta = movs.filter((m) => m.tipo === 'Venta' && m.metodo === 'Tarjeta').reduce((s, m) => s + m.monto, 0);
-  const ingresos = movs.filter((m) => m.tipo === 'Ingreso').reduce((s, m) => s + m.monto, 0);
-  const retiros = movs.filter((m) => m.tipo === 'Retiro').reduce((s, m) => s + m.monto, 0);
-  const totalVentas = ventasEfectivo + ventasTarjeta;
-  const efectivoEsperado = fondo + ventasEfectivo + ingresos - retiros;
-
-  function agregarMov(tipo: 'Ingreso' | 'Retiro', concepto: string, monto: number) {
-    setMovsManuales((prev) => [...prev, { id: `mv-${Date.now()}`, hora: horaActual(), tipo, concepto, monto }]);
-    setModalMov(false);
-    toast.exito(`${tipo} de ${formatCurrency(monto)} registrado.`);
+  async function agregarMov(tipo: 'Ingreso' | 'Retiro', concepto: string, monto: number) {
+    try {
+      await movimiento.mutateAsync({ tipo, concepto, monto });
+      setModalMov(false);
+      toast.exito(`${tipo} de ${formatCurrency(monto)} registrado.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo registrar el movimiento.');
+    }
   }
 
   return (
@@ -183,23 +154,32 @@ export function CajaPage() {
           retiros={retiros}
           efectivoEsperado={efectivoEsperado}
           onCerrar={() => setModalCorte(false)}
-          onConfirmar={() => {
-            cerrarCaja();
-            setMovsManuales([]);
-            setModalCorte(false);
-            toast.exito('Corte de caja realizado. Turno cerrado.');
+          onConfirmar={async (efectivoContado) => {
+            try {
+              const { diferencia } = await cerrar.mutateAsync(efectivoContado);
+              setModalCorte(false);
+              toast.exito(
+                diferencia === 0
+                  ? 'Corte realizado. Caja cuadrada.'
+                  : `Corte realizado. Diferencia: ${formatCurrency(diferencia)}.`,
+              );
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : 'No se pudo cerrar la caja.');
+            }
           }}
         />
       )}
       {modalApertura && (
         <AperturaModal
-          cajeroSugerido={cajero}
           onCerrar={() => setModalApertura(false)}
-          onAbrir={(fondoInicial, nombreCajero) => {
-            abrirCaja(fondoInicial, nombreCajero);
-            setMovsManuales([]);
-            setModalApertura(false);
-            toast.exito(`Caja abierta con fondo de ${formatCurrency(fondoInicial)}.`);
+          onAbrir={async (fondoInicial) => {
+            try {
+              await abrir.mutateAsync(fondoInicial);
+              setModalApertura(false);
+              toast.exito(`Caja abierta con fondo de ${formatCurrency(fondoInicial)}.`);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : 'No se pudo abrir la caja.');
+            }
           }}
         />
       )}
@@ -208,18 +188,15 @@ export function CajaPage() {
 }
 
 function AperturaModal({
-  cajeroSugerido,
   onCerrar,
   onAbrir,
 }: {
-  cajeroSugerido: string;
   onCerrar: () => void;
-  onAbrir: (fondo: number, cajero: string) => void;
+  onAbrir: (fondo: number) => void;
 }) {
   const [fondo, setFondo] = useState('500');
-  const [cajero, setCajero] = useState(cajeroSugerido);
   const fondoNum = parseFloat(fondo) || 0;
-  const valido = fondoNum >= 0 && cajero.trim() !== '';
+  const valido = fondoNum >= 0;
 
   return (
     <ModalShell titulo="Abrir caja" onCerrar={onCerrar}>
@@ -227,10 +204,6 @@ function AperturaModal({
         <p className="text-sm text-text-muted">
           Indica el efectivo con el que inicia el turno. Este fondo se usará como base para el arqueo al cerrar.
         </p>
-        <label className="block">
-          <span className="text-sm font-medium text-text">Cajero responsable</span>
-          <input value={cajero} onChange={(e) => setCajero(e.target.value)} className={inputCls} />
-        </label>
         <label className="block">
           <span className="text-sm font-medium text-text">Fondo de apertura (Q)</span>
           <input type="number" min={0} step="0.01" value={fondo} onChange={(e) => setFondo(e.target.value)} autoFocus className={cn(inputCls, 'num')} />
@@ -249,7 +222,7 @@ function AperturaModal({
       </div>
       <footer className="flex justify-end gap-2 border-t border-border p-4">
         <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
-        <Button disabled={!valido} onClick={() => onAbrir(fondoNum, cajero.trim())}>
+        <Button disabled={!valido} onClick={() => onAbrir(fondoNum)}>
           <Wallet size={18} /> Abrir caja
         </Button>
       </footer>
@@ -324,8 +297,12 @@ function CorteModal({
   retiros: number;
   efectivoEsperado: number;
   onCerrar: () => void;
-  onConfirmar: () => void;
+  onConfirmar: (efectivoContado: number) => void;
 }) {
+  const [contado, setContado] = useState(String(efectivoEsperado));
+  const contadoNum = parseFloat(contado) || 0;
+  const diferencia = contadoNum - efectivoEsperado;
+
   return (
     <ModalShell titulo="Corte de caja" onCerrar={onCerrar}>
       <div className="space-y-1.5 p-4 text-sm">
@@ -336,10 +313,27 @@ function CorteModal({
         <div className="my-2 border-t border-border" />
         <Linea label="Efectivo esperado en caja" valor={efectivoEsperado} fuerte />
         <Linea label="Ventas con tarjeta" valor={ventasTarjeta} />
+
+        <label className="block pt-3">
+          <span className="text-sm font-medium text-text">Efectivo contado (Q)</span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={contado}
+            onChange={(e) => setContado(e.target.value)}
+            autoFocus
+            className={cn(inputCls, 'num')}
+          />
+        </label>
+        <div className={cn('flex justify-between pt-1 text-sm font-semibold', diferencia === 0 ? 'text-success' : diferencia > 0 ? 'text-info' : 'text-danger')}>
+          <span>Diferencia</span>
+          <span className="num">{diferencia < 0 ? '−' : diferencia > 0 ? '+' : ''}{formatCurrency(Math.abs(diferencia))}</span>
+        </div>
       </div>
       <footer className="flex justify-end gap-2 border-t border-border p-4">
         <Button variant="secondary" onClick={onCerrar}>Cancelar</Button>
-        <Button onClick={onConfirmar}>
+        <Button onClick={() => onConfirmar(contadoNum)}>
           <Lock size={18} /> Confirmar corte
         </Button>
       </footer>

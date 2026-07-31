@@ -5,7 +5,11 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { gruposModificadores, type Producto, type GrupoModificador, type OpcionModificador } from '@/mock/data';
+import { type Producto } from '@/lib/tipos';
+import { useModificadores } from '@/lib/catalogo';
+import { type GrupoModificadorApi } from '@/lib/api';
+
+type OpcionModificador = GrupoModificadorApi['opciones'][number];
 
 /** Elige los modificadores de un producto (tamaño, extras, "sin…") antes de agregarlo. */
 export function ModificadoresModal({
@@ -17,9 +21,10 @@ export function ModificadoresModal({
   onCerrar: () => void;
   onAgregar: (extraPrecio: number, nota: string) => void;
 }) {
+  const { data: todosGrupos = [] } = useModificadores();
   const grupos = (producto.modificadores ?? [])
-    .map((id) => gruposModificadores.find((g) => g.id === id))
-    .filter((g): g is GrupoModificador => Boolean(g));
+    .map((id) => todosGrupos.find((g) => g.id === id))
+    .filter((g): g is GrupoModificadorApi => Boolean(g));
 
   // Selección: para grupos únicos, la primera opción por defecto; múltiples arrancan vacíos.
   const [seleccion, setSeleccion] = useState<Record<string, string[]>>(() => {
@@ -28,7 +33,7 @@ export function ModificadoresModal({
     return inicial;
   });
 
-  function toggle(grupo: GrupoModificador, opcion: OpcionModificador) {
+  function toggle(grupo: GrupoModificadorApi, opcion: OpcionModificador) {
     setSeleccion((prev) => {
       const actual = prev[grupo.id] ?? [];
       if (grupo.multiple) {

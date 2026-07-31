@@ -1,7 +1,8 @@
 import { X, Tag } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { formatCurrency } from '@/lib/format';
-import { promocionesSeed, type Promocion } from '@/mock/data';
+import { usePromociones } from '@/lib/promociones';
+import { type PromocionApi as Promocion } from '@/lib/api';
 import { descuentoPromo } from '../hooks/usePosTicket';
 
 /** Lista las promociones activas para aplicar una al ticket. */
@@ -14,7 +15,8 @@ export function PromoSelectorModal({
   onCerrar: () => void;
   onAplicar: (promo: Promocion) => void;
 }) {
-  const activas = promocionesSeed.filter((p) => p.activa);
+  const { data: promos = [] } = usePromociones();
+  const activas = promos.filter((p) => p.activa);
 
   return (
     <Modal onClose={onCerrar} ariaLabel="Aplicar promoción" className="w-full max-w-md">

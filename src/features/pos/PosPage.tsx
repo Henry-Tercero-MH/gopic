@@ -29,14 +29,18 @@ import { DescuentoModal } from './components/DescuentoModal';
 import { DividirCuentaModal } from './components/DividirCuentaModal';
 import { ModificadoresModal } from './components/ModificadoresModal';
 import { PromoSelectorModal } from './components/PromoSelectorModal';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePosTicket } from './hooks/usePosTicket';
 import { cobrarVenta } from '@/lib/ventasApi';
 import { crearComanda } from '@/lib/api';
+import { useMesas } from '@/lib/mesas';
+import { useCuentaMesa, useMesaServicio } from '@/lib/comandas';
 import { formatCurrency } from '@/lib/format';
 import { iconoCategoria } from '@/lib/iconosCategoria';
 import { useToast } from '@/lib/toast';
 import { useOperacion, type TipoVenta } from '@/lib/operacion';
-import { type Producto, type Promocion } from '@/mock/data';
+import { type Producto } from '@/lib/tipos';
+import { type PromocionApi as Promocion } from '@/lib/api';
 
 
 const tipoVentaInfo: Record<TipoVenta, { label: string; icon: LucideIcon }> = {
@@ -47,11 +51,16 @@ const tipoVentaInfo: Record<TipoVenta, { label: string; icon: LucideIcon }> = {
 
 export function PosPage() {
   const [params, setParams] = useSearchParams();
-  const { mesas, cuentas, productos, categorias, enviarComanda, pedirCuenta } = useOperacion();
+  const { productos, categorias } = useOperacion();
+  const { data: mesas = [] } = useMesas();
+  const qc = useQueryClient();
 
   const mesaId = params.get('mesa') ?? undefined;
   const mesa = mesaId ? mesas.find((m) => m.id === mesaId) : undefined;
   const tipoVenta: TipoVenta = mesaId ? 'mesa' : params.get('tipo') === 'llevar' ? 'llevar' : 'mostrador';
+
+  const { data: cuenta } = useCuentaMesa(mesaId);
+  const { enviar, pedirCuenta: pedirCuentaMut } = useMesaServicio();
 
   const {
     lineas,
@@ -68,7 +77,6 @@ export function PosPage() {
     promoDesc,
     total,
     totalItems,
-    lineasParaStore,
   } = usePosTicket();
 
   const [catActiva, setCatActiva] = useState<string>('all');
@@ -86,10 +94,9 @@ export function PosPage() {
   const toast = useToast();
   const confirm = useConfirm();
 
-  // Cuenta ya enviada a cocina para esta mesa (líneas acumuladas en el store).
-  const cuenta = mesaId ? cuentas[mesaId] : undefined;
+  // Cuenta acumulada de la mesa (rondas ya enviadas a cocina), desde el backend.
   const yaEnviado = cuenta?.lineas ?? [];
-  const totalEnviado = yaEnviado.reduce((s, l) => s + l.precio * l.cantidad, 0);
+  const totalEnviado = cuenta?.total ?? 0;
 
   // Atajo "/" para saltar al buscador desde cualquier parte de la vista.
   useEffect(() => {
@@ -143,19 +150,32 @@ export function PosPage() {
   }
 
 
-  /** Venta en MESA: envía la comanda a cocina y deja la cuenta abierta (post-pago). */
-  function enviarACocina() {
+  /** Venta en MESA: envía la ronda a cocina y acumula en la cuenta abierta (post-pago). */
+  async function enviarACocina() {
     if (!mesa) return;
-    const folio = enviarComanda(mesa.nombre, lineasParaStore(), mesa.id);
-    limpiarTicket();
-    toast.exito(`Comanda ${folio} enviada a cocina. Inventario descontado.`);
+    try {
+      await enviar.mutateAsync({
+        tipoVenta: 'mesa',
+        mesaId: mesa.id,
+        origen: mesa.nombre,
+        items: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad, nota: l.nota })),
+      });
+      limpiarTicket();
+      toast.exito(`Ronda enviada a cocina. ${mesa.nombre} ocupada.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo enviar la comanda.');
+    }
   }
 
   /** Mesa que pide la cuenta pasa a estado "cuenta" antes de ir a caja. */
-  function marcarPideCuenta() {
-    if (!mesa) return;
-    pedirCuenta(mesa.id);
-    toast.info(`${mesa.nombre} pidió la cuenta. Cóbrala cuando el cliente pague.`);
+  async function marcarPideCuenta() {
+    if (!mesa || !cuenta) return;
+    try {
+      await pedirCuentaMut.mutateAsync({ cuentaId: cuenta.id, mesaId: mesa.id });
+      toast.info(`${mesa.nombre} pidió la cuenta. Cóbrala cuando el cliente pague.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo marcar la cuenta.');
+    }
   }
 
   return (
@@ -257,7 +277,7 @@ export function PosPage() {
             </div>
             <p className="text-xs text-text-muted">
               {mesa
-                ? `${cuenta?.mesero ?? mesa.mesero ?? 'Mesero'} · cuenta abierta`
+                ? `${mesa.zona} · ${totalEnviado > 0 ? 'cuenta abierta' : 'mesa libre'}`
                 : tipoVenta === 'llevar'
                   ? 'Pedido para llevar · se cobra al confirmar'
                   : 'Venta en mostrador · se cobra al confirmar'}
@@ -411,7 +431,7 @@ export function PosPage() {
                 </Button>
                 <Button
                   size="lg"
-                  disabled={totalEnviado === 0 && lineas.length === 0}
+                  disabled={totalEnviado === 0}
                   onClick={() => setCobroAbierto(true)}
                 >
                   <CreditCard size={18} /> Cobrar
@@ -496,28 +516,53 @@ export function PosPage() {
 
       {cobroAbierto && (
         <CobroModal
-          total={mesa ? totalEnviado + total : total}
+          total={mesa ? totalEnviado : total}
           registrarCobro={async ({ metodo, totalFinal, recibido, clienteId, recompensaId }) => {
-            // Venta real contra el backend: registra la factura y descuenta inventario.
-            const items = lineas.map((l) => ({
-              producto_id: l.producto.id,
-              descripcion: l.producto.nombre + (l.nota ? ` · ${l.nota}` : ''),
-              cantidad: l.cantidad,
-              precio_unitario: precioLinea(l),
-              impuesto_tasa: 12,
-            }));
-            if (items.length === 0) {
-              throw new Error('El flujo de mesa (cuenta acumulada) aún no está conectado al backend.');
-            }
-            const descuento = Math.max(0, subtotal - totalFinal);
-            const res = await cobrarVenta({ tipoVenta, items, metodo, recibido, descuento, clienteId, recompensaId });
-
-            // Envía a cocina (KDS). Best-effort: no bloquea el cobro si falla.
-            crearComanda({
+            // En mesa se cobra la cuenta acumulada; en mostrador/llevar, el ticket actual.
+            const items =
+              mesa && cuenta
+                ? cuenta.lineas.map((l) => ({
+                    producto_id: l.productoId,
+                    descripcion: l.nombre,
+                    cantidad: l.cantidad,
+                    precio_unitario: l.precio,
+                    impuesto_tasa: 12,
+                  }))
+                : lineas.map((l) => ({
+                    producto_id: l.producto.id,
+                    descripcion: l.producto.nombre + (l.nota ? ` · ${l.nota}` : ''),
+                    cantidad: l.cantidad,
+                    precio_unitario: precioLinea(l),
+                    impuesto_tasa: 12,
+                  }));
+            if (items.length === 0) throw new Error('No hay artículos para cobrar.');
+            const base = items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+            const descuento = Math.max(0, base - totalFinal);
+            const res = await cobrarVenta({
               tipoVenta,
-              mesaId: mesa?.id,
-              items: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad, nota: l.nota })),
-            }).catch(() => {});
+              items,
+              metodo,
+              recibido,
+              descuento,
+              clienteId,
+              recompensaId,
+              cuentaId: mesa ? cuenta?.id : undefined,
+            });
+
+            // Mostrador/llevar: envía a cocina (best-effort). La mesa ya envió sus rondas.
+            if (!mesa) {
+              crearComanda({
+                tipoVenta,
+                items: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad, nota: l.nota })),
+              }).catch(() => {});
+            }
+
+            // Refresca caja (la venta entra al turno) y, si es mesa, mesas y su cuenta.
+            qc.invalidateQueries({ queryKey: ['caja'] });
+            if (mesa) {
+              qc.invalidateQueries({ queryKey: ['mesas'] });
+              qc.invalidateQueries({ queryKey: ['cuenta-mesa', mesa.id] });
+            }
 
             return { folio: String(res.folio), puntosGanados: res.puntos_ganados };
           }}

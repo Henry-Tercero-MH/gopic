@@ -4,7 +4,9 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { formatCurrency } from '@/lib/format';
-import { type LineaTicket } from '@/lib/operacion';
+
+/** Línea mínima que la división necesita (compatible con el ticket y la cuenta de mesa). */
+type LineaDivisible = { nombre: string; precio: number; cantidad: number };
 
 /** Divide la cuenta en partes iguales (reconciliando centavos) o por comensal. */
 export function DividirCuentaModal({
@@ -12,7 +14,7 @@ export function DividirCuentaModal({
   total,
   onCerrar,
 }: {
-  lineas: LineaTicket[];
+  lineas: LineaDivisible[];
   total: number;
   onCerrar: () => void;
 }) {

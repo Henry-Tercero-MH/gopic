@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getProductos,
   getCategorias,
+  getModificadores,
   crearProducto,
   editarProducto,
   eliminarProducto,
@@ -12,7 +13,7 @@ import {
   type CategoriaInput,
 } from './api';
 import { registrarIconosCategoria } from './iconosCategoria';
-import type { Producto, Categoria } from '@/mock/data';
+import type { Producto, Categoria } from '@/lib/tipos';
 
 /**
  * Trae productos y categorías del backend, los mapea a los tipos que usa la UI
@@ -32,7 +33,7 @@ async function cargarCatalogo(): Promise<{ productos: Producto[]; categorias: Ca
     estacion: p.estacion,
     imagen: p.imagenUrl ?? undefined,
     destacado: p.destacado,
-    // `modificadores` no viene en el listado; se resolverá con el detalle del producto
+    modificadores: p.gruposMod?.map((g) => g.grupoModificadorId) ?? [],
   }));
 
   const categorias: Categoria[] = cats.map((c) => ({ id: c.id, nombre: c.nombre, emoji: '', icono: c.icono ?? undefined }));
@@ -46,6 +47,11 @@ export function useCatalogo() {
     queryFn: cargarCatalogo,
     staleTime: 5 * 60 * 1000, // 5 min: el catálogo cambia poco
   });
+}
+
+/** Grupos de modificadores de la sucursal (tamaño, extras, término…). */
+export function useModificadores() {
+  return useQuery({ queryKey: ['modificadores'], queryFn: getModificadores, staleTime: 5 * 60 * 1000 });
 }
 
 /** Mutaciones de productos y categorías; invalidan el catálogo (lo re-sincroniza AppShell). */

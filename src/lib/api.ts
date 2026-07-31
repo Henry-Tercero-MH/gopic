@@ -69,6 +69,20 @@ export async function loginApi(email: string, password: string): Promise<Usuario
   return usuario;
 }
 
+// ---- Recuperación de contraseña (WhatsApp) ----
+export interface RecuperarResultado {
+  ok: boolean;
+  enviado: boolean;
+  mensaje?: string;
+  telefono?: string;
+  waLink?: string;
+  resetUrl?: string;
+}
+export const recuperarPassword = (email: string) =>
+  apiFetch<RecuperarResultado>('/auth/recuperar', { method: 'POST', body: JSON.stringify({ email }) });
+export const restablecerPassword = (token: string, password: string) =>
+  apiFetch<{ ok: boolean }>('/auth/restablecer', { method: 'POST', body: JSON.stringify({ token, password }) });
+
 // ---- Catálogo ----
 export interface ProductoApi {
   id: string;
@@ -78,7 +92,16 @@ export interface ProductoApi {
   estacion: 'Barra' | 'Cocina';
   destacado: boolean;
   imagenUrl: string | null;
+  gruposMod?: { grupoModificadorId: string }[];
 }
+export interface GrupoModificadorApi {
+  id: string;
+  nombre: string;
+  requerido: boolean;
+  multiple: boolean;
+  opciones: { id: string; nombre: string; precio: number }[];
+}
+export const getModificadores = () => apiFetch<GrupoModificadorApi[]>('/modificadores');
 export interface CategoriaApi {
   id: string;
   nombre: string;
@@ -118,14 +141,34 @@ export interface FormaPagoApi {
 export const getFormasPago = () => apiFetch<FormaPagoApi[]>('/formas-pago');
 
 // ---- Caja ----
+export interface CajaMovimientoApi {
+  id: string;
+  hora: string;
+  tipo: 'Apertura' | 'Venta' | 'Ingreso' | 'Retiro';
+  concepto: string;
+  metodo: 'Efectivo' | 'Tarjeta' | null;
+  monto: number;
+}
 export interface CajaActual {
   abierta: boolean;
-  sesion?: { id: string; fondoApertura: string };
-  resumen?: { facturas: number; totalVendido: string | number; efectivoEsperado: number };
+  sesion?: { id: string; fondoApertura: number; abiertaEn: string; cajero: string };
+  resumen?: {
+    totalVentas: number;
+    ventasEfectivo: number;
+    ventasTarjeta: number;
+    ingresos: number;
+    retiros: number;
+    efectivoEsperado: number;
+  };
+  movimientos?: CajaMovimientoApi[];
 }
 export const getCajaActual = () => apiFetch<CajaActual>('/caja/actual');
 export const abrirCaja = (fondoApertura: number) =>
   apiFetch('/caja/abrir', { method: 'POST', body: JSON.stringify({ fondoApertura }) });
+export const registrarMovimientoCaja = (tipo: 'Ingreso' | 'Retiro', concepto: string, monto: number) =>
+  apiFetch('/caja/movimiento', { method: 'POST', body: JSON.stringify({ tipo, concepto, monto }) });
+export const cerrarCaja = (efectivoContado: number) =>
+  apiFetch<{ diferencia: number }>('/caja/cerrar', { method: 'POST', body: JSON.stringify({ efectivoContado }) });
 
 // ---- Ventas ----
 export interface ItemVentaApi {
@@ -155,6 +198,7 @@ export const registrarVenta = (payload: {
   descuento?: number;
   clienteId?: string;
   recompensaId?: string;
+  cuentaId?: string;
 }) => apiFetch<VentaResultado>('/ventas', { method: 'POST', body: JSON.stringify(payload) });
 
 // ---- Clientes ----
@@ -191,10 +235,36 @@ export interface RecompensaApi {
   nombre: string;
   tipo: 'producto' | 'descuento_monto' | 'descuento_pct';
   costoPuntos: number;
-  valor: string | null;
+  valor: number | null;
   productoId: string | null;
+  activa: boolean;
 }
-export const getRecompensas = () => apiFetch<RecompensaApi[]>('/recompensas');
+export type RecompensaInput = {
+  nombre: string;
+  tipo: RecompensaApi['tipo'];
+  costoPuntos: number;
+  productoId?: string;
+  valor?: number;
+  activa?: boolean;
+};
+/** Recompensas para canje (solo activas). */
+export const getRecompensas = () => apiFetch<RecompensaApi[]>('/recompensas?activas=1');
+/** Todas las recompensas (gestión). */
+export const getRecompensasAdmin = () => apiFetch<RecompensaApi[]>('/recompensas');
+export const crearRecompensa = (data: RecompensaInput) =>
+  apiFetch<RecompensaApi>('/recompensas', { method: 'POST', body: JSON.stringify(data) });
+export const editarRecompensa = (id: string, data: Partial<RecompensaInput>) =>
+  apiFetch<RecompensaApi>(`/recompensas/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+export const eliminarRecompensa = (id: string) => apiFetch<null>(`/recompensas/${id}`, { method: 'DELETE' });
+
+// ---- Config de lealtad ----
+export interface ConfigLealtadApi {
+  quetzalesPorPunto: number;
+  activo: boolean;
+}
+export const getConfigLealtad = () => apiFetch<ConfigLealtadApi>('/config-lealtad');
+export const editarConfigLealtad = (quetzalesPorPunto: number) =>
+  apiFetch<ConfigLealtadApi>('/config-lealtad', { method: 'PATCH', body: JSON.stringify({ quetzalesPorPunto }) });
 
 // ---- Dashboard ----
 export interface DashboardData {
@@ -235,15 +305,37 @@ export interface ComandaApi {
 }
 export type EstadoComandaApi = ComandaApi['estado'];
 
+export interface ComandaHistorialApi extends ComandaApi {
+  entregadaEn: string;
+}
 export const getComandas = () => apiFetch<ComandaApi[]>('/comandas');
+export const getHistorialComandas = () => apiFetch<ComandaHistorialApi[]>('/comandas/historial');
 export const crearComanda = (payload: {
   tipoVenta: 'mesa' | 'mostrador' | 'llevar';
   mesaId?: string;
   origen?: string;
   items: { productoId: string; cantidad: number; nota?: string }[];
-}) => apiFetch('/comandas', { method: 'POST', body: JSON.stringify(payload) });
+}) => apiFetch<{ cuentaId: string; comandas: unknown[] }>('/comandas', { method: 'POST', body: JSON.stringify(payload) });
 export const avanzarComanda = (id: string, estado: EstadoComandaApi) =>
   apiFetch<ComandaApi>(`/comandas/${id}`, { method: 'PATCH', body: JSON.stringify({ estado }) });
+
+// ---- Cuentas (servicio en mesa) ----
+export interface CuentaLineaApi {
+  productoId: string;
+  nombre: string;
+  precio: number;
+  cantidad: number;
+}
+export interface CuentaMesaApi {
+  id: string;
+  mesaId: string | null;
+  estado: 'abierta' | 'cobrada' | 'cancelada';
+  lineas: CuentaLineaApi[];
+  total: number;
+}
+export const getCuentaMesa = (mesaId: string) => apiFetch<CuentaMesaApi | null>(`/cuentas/mesa/${mesaId}`);
+export const pedirCuentaMesa = (cuentaId: string) =>
+  apiFetch(`/cuentas/${cuentaId}/pedir-cuenta`, { method: 'POST' });
 
 // ---- Mesas ----
 export interface MesaApi {
@@ -481,12 +573,13 @@ export interface UsuarioAdminApi {
   id: string;
   nombre: string;
   email: string;
+  telefono: string;
   activo: boolean;
   rolId: string | null;
   rol: string;
 }
-export type UsuarioCrearInput = { nombre: string; email: string; password: string; rolId: string };
-export type UsuarioEditarInput = { nombre?: string; activo?: boolean; rolId?: string; password?: string };
+export type UsuarioCrearInput = { nombre: string; email: string; telefono?: string; password: string; rolId: string };
+export type UsuarioEditarInput = { nombre?: string; telefono?: string; activo?: boolean; rolId?: string; password?: string };
 
 export const getUsuarios = () => apiFetch<UsuarioAdminApi[]>('/usuarios');
 export const crearUsuario = (data: UsuarioCrearInput) =>
@@ -494,6 +587,58 @@ export const crearUsuario = (data: UsuarioCrearInput) =>
 export const editarUsuario = (id: string, data: UsuarioEditarInput) =>
   apiFetch(`/usuarios/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 export const eliminarUsuario = (id: string) => apiFetch<null>(`/usuarios/${id}`, { method: 'DELETE' });
+
+// ---- Carta pública (sin auth) ----
+export interface CartaData {
+  negocio: { nombre: string };
+  categorias: { id: string; nombre: string; icono: string | null }[];
+  productos: {
+    id: string;
+    categoriaId: string;
+    nombre: string;
+    precio: number;
+    imagen: string | null;
+    destacado: boolean;
+    personalizable: boolean;
+  }[];
+  promociones: { id: string; nombre: string; aplicaEn: string; vigencia: string }[];
+}
+export const getCarta = () => apiFetch<CartaData>('/public/carta');
+
+// ---- Reportes ----
+export interface ReportesData {
+  periodo: string;
+  ingresos: number;
+  gastos: number;
+  gastosPorCategoria: { categoria: string; monto: number; pct: number }[];
+  ventasPorDia: { dia: string; monto: number }[];
+  ventasPorCategoria: { categoria: string; monto: number; pct: number }[];
+  rentabilidadProductos: { producto: string; vendidos: number; ingreso: number; costo: number; margen: number }[];
+  topVendedores: { nombre: string; iniciales: string; monto: number; tickets: number }[];
+  fidelizacion: {
+    puntosOtorgados: number;
+    puntosCanjeados: number;
+    recompensasCanjeadas: { nombre: string; veces: number }[];
+    topClientes: { nombre: string; puntos: number }[];
+  };
+}
+export const getReportes = () => apiFetch<ReportesData>('/reportes');
+
+// ---- Unidades de medida ----
+export interface UnidadApi {
+  id: string;
+  nombre: string;
+  abreviatura: string;
+  tipo: 'Peso' | 'Volumen' | 'Unidad';
+}
+export type UnidadInput = { nombre: string; abreviatura: string; tipo: UnidadApi['tipo'] };
+
+export const getUnidades = () => apiFetch<UnidadApi[]>('/unidades');
+export const crearUnidad = (data: UnidadInput) =>
+  apiFetch<UnidadApi>('/unidades', { method: 'POST', body: JSON.stringify(data) });
+export const editarUnidad = (id: string, data: Partial<UnidadInput>) =>
+  apiFetch<UnidadApi>(`/unidades/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+export const eliminarUnidad = (id: string) => apiFetch<null>(`/unidades/${id}`, { method: 'DELETE' });
 
 export const getProveedores = () => apiFetch<ProveedorApi[]>('/proveedores');
 export const crearProveedor = (data: ProveedorInput) =>

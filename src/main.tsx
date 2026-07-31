@@ -34,6 +34,7 @@ const router = createBrowserRouter([
   { path: RUTAS.login, element: pagina(() => import('@/features/auth/LoginPage'), 'LoginPage') },
   { path: RUTAS.registro, element: pagina(() => import('@/features/auth/RegistroPage'), 'RegistroPage') },
   { path: RUTAS.recuperar, element: pagina(() => import('@/features/auth/RecuperarPage'), 'RecuperarPage') },
+  { path: RUTAS.restablecer, element: pagina(() => import('@/features/auth/RestablecerPage'), 'RestablecerPage') },
   { path: RUTAS.carta, element: pagina(() => import('@/features/menu-digital/CartaPage'), 'CartaPage') },
   {
     path: RUTAS.dashboard,

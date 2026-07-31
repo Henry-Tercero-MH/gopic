@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/Badge';
 import { UtilidadNetaCard } from './UtilidadNetaCard';
 import { SoloAdmin } from '@/lib/auth';
 import { formatCurrency } from '@/lib/format';
-import { useOperacion, type TipoVenta } from '@/lib/operacion';
+import { type TipoVenta } from '@/lib/operacion';
 import { useDashboard } from '@/lib/dashboard';
 import { useInsumos } from '@/lib/inventario';
+import { useMesas } from '@/lib/mesas';
 
 const tipoVentaBadge: Record<TipoVenta, { label: string; icon: typeof Utensils }> = {
   mesa: { label: 'Mesa', icon: Utensils },
@@ -16,7 +17,7 @@ const tipoVentaBadge: Record<TipoVenta, { label: string; icon: typeof Utensils }
 };
 
 export function DashboardPage() {
-  const { mesas } = useOperacion();
+  const { data: mesas = [] } = useMesas();
   const { data: dash } = useDashboard();
   const { data: insumos = [] } = useInsumos();
 
@@ -90,7 +91,7 @@ export function DashboardPage() {
           value={`${mesasOcupadas}/${mesasTotales}`}
           icon={Utensils}
           iconTone="accent"
-          hint={`${Math.round((mesasOcupadas / mesasTotales) * 100)}% de ocupación`}
+          hint={`${mesasTotales > 0 ? Math.round((mesasOcupadas / mesasTotales) * 100) : 0}% de ocupación`}
         />
       </div>
 

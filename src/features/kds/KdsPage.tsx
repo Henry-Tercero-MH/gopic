@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Flame,
   Loader2,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
@@ -18,7 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { cn } from '@/lib/cn';
 import { elapsed, formatTime } from '@/lib/format';
-import { useComandas, useAvanzarComanda } from '@/lib/comandas';
+import { useComandas, useAvanzarComanda, useHistorialComandas } from '@/lib/comandas';
 import { type ComandaApi, type EstadoComandaApi } from '@/lib/api';
 import { getPreparacion } from '@/mock/data';
 
@@ -59,6 +60,8 @@ export function KdsPage() {
   const { data: comandas = [], isLoading, isError } = useComandas();
   const avanzar = useAvanzarComanda();
   const [activa, setActiva] = useState<ComandaApi | null>(null);
+  const [historialAbierto, setHistorialAbierto] = useState(false);
+  const { data: historial = [], isLoading: cargandoHistorial } = useHistorialComandas(historialAbierto);
 
   // Reloj que avanza cada segundo para los contadores en vivo.
   const [now, setNow] = useState(() => Date.now());
@@ -87,6 +90,9 @@ export function KdsPage() {
           <span className="num hidden text-xl font-semibold tabular-nums text-text sm:inline sm:text-2xl">
             {formatTime(new Date(now))}
           </span>
+          <Button variant="secondary" size="sm" onClick={() => setHistorialAbierto(true)}>
+            <History size={18} /> Historial
+          </Button>
           <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-3 py-1 text-xs font-semibold text-success">
             <span className="h-2 w-2 animate-pulse rounded-full bg-success motion-reduce:animate-none" /> En vivo
           </span>
@@ -139,7 +145,75 @@ export function KdsPage() {
       )}
 
       <RecetaDrawer comanda={activa} now={now} onClose={() => setActiva(null)} />
+      <HistorialDrawer
+        abierto={historialAbierto}
+        cargando={cargandoHistorial}
+        comandas={historial}
+        onClose={() => setHistorialAbierto(false)}
+      />
     </div>
+  );
+}
+
+function HistorialDrawer({
+  abierto,
+  cargando,
+  comandas,
+  onClose,
+}: {
+  abierto: boolean;
+  cargando: boolean;
+  comandas: import('@/lib/api').ComandaHistorialApi[];
+  onClose: () => void;
+}) {
+  return (
+    <Drawer open={abierto} onClose={onClose} ariaLabel="Historial de comandas entregadas">
+      <header className="flex items-start justify-between border-b border-border p-4">
+        <div>
+          <h2 className="font-display text-lg font-semibold text-text">Historial de comandas</h2>
+          <p className="mt-0.5 text-sm text-text-muted">Últimas {comandas.length} entregadas</p>
+        </div>
+        <button onClick={onClose} aria-label="Cerrar" className="grid h-9 w-9 place-items-center rounded-md border border-border hover:bg-surface-sunk">
+          <X size={18} />
+        </button>
+      </header>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-auto scroll-thin p-4">
+        {cargando ? (
+          <div className="grid place-items-center py-10 text-text-muted">
+            <Loader2 size={24} className="animate-spin motion-reduce:animate-none" aria-label="Cargando" />
+          </div>
+        ) : comandas.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-text-muted">
+            Aún no hay comandas entregadas.
+          </p>
+        ) : (
+          comandas.map((c) => (
+            <div key={c.id} className="rounded-lg border border-border bg-surface p-3 shadow-card">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="num text-base font-bold text-text">{c.folio}</span>
+                  <Badge tone={c.estacion === 'Barra' ? 'brand' : 'accent'}>{c.estacion}</Badge>
+                </div>
+                <span className="num inline-flex items-center gap-1 text-xs text-text-muted">
+                  <CheckCircle2 size={13} className="text-success" />
+                  {new Date(c.entregadaEn).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-text-muted">{c.origen}</p>
+              <ul className="mt-2 space-y-1 border-t border-border pt-2">
+                {c.items.map((it, i) => (
+                  <li key={i} className="flex items-baseline gap-2 text-sm text-text">
+                    <span className="num font-semibold text-brand-700">{it.cantidad}×</span>
+                    <span>{it.nombre}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
+      </div>
+    </Drawer>
   );
 }
 
